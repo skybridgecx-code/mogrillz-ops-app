@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MoGrillz Ops
 
-## Getting Started
+MoGrillz Ops is the private admin app for the MoGrillz drop-food business. It opens to an overview-first dashboard and can expand into orders, inventory, menu controls, customers, analytics, and AI insights.
 
-First, run the development server:
+## Setup
+
+1. Create a Supabase project.
+2. Run [`supabase/schema.sql`](/Users/muhammadaatif/Desktop/untitled%20folder%203/mogrillz-ops-app/supabase/schema.sql) in the Supabase SQL editor.
+3. Run [`supabase/seed.sql`](/Users/muhammadaatif/Desktop/untitled%20folder%203/mogrillz-ops-app/supabase/seed.sql) if you want the starter demo data.
+4. Copy [`.env.example`](/Users/muhammadaatif/Desktop/untitled%20folder%203/mogrillz-ops-app/.env.example) to `.env.local` for local work, then set these values:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+NEXT_PUBLIC_USE_MOCK_DATA=false
+```
+
+5. Start the app with `npm run dev`.
+
+## First Admin
+
+Use the server-only bootstrap script to create or invite the first founder account and attach it to `admin_memberships`:
+
+```bash
+npm run admin:create -- --email you@example.com --name "Chef Mo" --mode create --password "temporary-or-final-password"
+```
+
+If you omit `--password`, the script falls back to an invite flow instead of creating the password-based login directly.
+
+## Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Security Model
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The app uses Supabase Row Level Security so only authenticated admins can read or modify ops data. The bootstrap script is intended to run on a trusted machine or server with the service role key available.
