@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { FulfillmentAnalyticsCards } from "@/components/dashboard/analytics/fulfillment-analytics-cards";
 import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
+import { FulfillmentSummaryCards } from "@/components/dashboard/overview/fulfillment-summary-cards";
+import { OverviewKpiGrid } from "@/components/dashboard/overview/overview-kpi-grid";
 import { getFulfillmentSummary } from "@/lib/dashboard/fulfillment-summary";
 import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orders/order-filters";
 
@@ -196,25 +198,12 @@ export function DashboardApp({
   function renderOverview() {
     return (
       <section className="view-panel active">
-        <div className="kpi-grid">
-          {snapshot.kpis.map((kpi) => (
-            <article className="card kpi-card" key={kpi.label}>
-              <div className="kpi-label">{kpi.label}</div>
-              <div className="kpi-value">{kpi.value}</div>
-              <div className="kpi-delta">{kpi.delta}</div>
-            </article>
-          ))}
-          <article className="card kpi-card">
-            <div className="kpi-label">Delivery Orders</div>
-            <div className="kpi-value">{fulfillmentSummary.deliveryCount}</div>
-            <div className="kpi-delta">{formatCurrency(fulfillmentSummary.deliveryRevenue)} in delivery revenue</div>
-          </article>
-          <article className="card kpi-card">
-            <div className="kpi-label">Pickup Orders</div>
-            <div className="kpi-value">{fulfillmentSummary.pickupCount}</div>
-            <div className="kpi-delta">{formatCurrency(fulfillmentSummary.pickupRevenue)} in pickup revenue</div>
-          </article>
-        </div>
+        <OverviewKpiGrid kpis={snapshot.kpis}>
+          <FulfillmentSummaryCards
+            fulfillmentSummary={fulfillmentSummary}
+            formatCurrency={formatCurrency}
+          />
+        </OverviewKpiGrid>
 
         <div className="overview-grid">
           <article className="card card-span-2">
