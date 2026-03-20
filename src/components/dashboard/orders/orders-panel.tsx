@@ -20,6 +20,9 @@ interface OrdersPanelProps {
   onResetFilters: () => void;
   onOpenInventory: () => void;
   onOpenCustomer: () => void;
+  onAdvanceStatus: (orderId: string, nextStatus: Order["status"]) => Promise<void>;
+  statusError: string | null;
+  statusUpdating: boolean;
   formatCurrency: (cents: number) => string;
   statusTone: (status: string) => string;
 }
@@ -39,6 +42,9 @@ export function OrdersPanel({
   onResetFilters,
   onOpenInventory,
   onOpenCustomer,
+  onAdvanceStatus,
+  statusError,
+  statusUpdating,
   formatCurrency,
   statusTone,
 }: OrdersPanelProps) {
@@ -93,6 +99,9 @@ export function OrdersPanel({
           selectedOrder={selectedOrder}
           onOpenInventory={onOpenInventory}
           onOpenCustomer={onOpenCustomer}
+          onAdvanceStatus={onAdvanceStatus}
+          statusError={statusError}
+          statusUpdating={statusUpdating}
           formatCurrency={formatCurrency}
         />
       </div>

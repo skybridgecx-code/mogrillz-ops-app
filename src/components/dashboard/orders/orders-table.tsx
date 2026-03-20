@@ -37,7 +37,7 @@ export function OrdersTable({
             >
               <td>
                 <div className="row-name">
-                  <strong>{order.id.toUpperCase()}</strong>
+                  <strong>{order.orderNumber.toUpperCase()}</strong>
                   <span className="row-subtle">{order.paymentProvider} checkout</span>
                 </div>
               </td>

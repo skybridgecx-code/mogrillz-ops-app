@@ -1,9 +1,13 @@
 import type { Order } from "@/types/domain";
+import { getNextOrderStatus, getOrderStatusActionLabel } from "@/lib/dashboard/order-status";
 
 interface OrderDetailCardProps {
   selectedOrder: Order | null;
   onOpenInventory: () => void;
   onOpenCustomer: () => void;
+  onAdvanceStatus: (orderId: string, nextStatus: Order["status"]) => Promise<void>;
+  statusError: string | null;
+  statusUpdating: boolean;
   formatCurrency: (cents: number) => string;
 }
 
@@ -11,14 +15,20 @@ export function OrderDetailCard({
   selectedOrder,
   onOpenInventory,
   onOpenCustomer,
+  onAdvanceStatus,
+  statusError,
+  statusUpdating,
   formatCurrency,
 }: OrderDetailCardProps) {
+  const nextStatus = selectedOrder ? getNextOrderStatus(selectedOrder.status) : null;
+  const nextActionLabel = selectedOrder ? getOrderStatusActionLabel(selectedOrder.status) : null;
+
   return (
     <aside className="detail-card">
       <div className="card-head">
         <div>
           <p className="card-kicker">Selected Order</p>
-          <h2 className="card-title">{selectedOrder ? `${selectedOrder.id.toUpperCase()} · ${selectedOrder.customerName}` : "No order selected"}</h2>
+          <h2 className="card-title">{selectedOrder ? `${selectedOrder.orderNumber.toUpperCase()} · ${selectedOrder.customerName}` : "No order selected"}</h2>
         </div>
       </div>
 
@@ -59,9 +69,24 @@ export function OrderDetailCard({
             ))}
           </div>
           <div className="detail-actions">
+            {selectedOrder && nextStatus && nextActionLabel ? (
+              <button
+                className="topbar-action"
+                disabled={statusUpdating}
+                onClick={() => onAdvanceStatus(selectedOrder.id, nextStatus)}
+                type="button"
+              >
+                {statusUpdating ? "Updating..." : nextActionLabel}
+              </button>
+            ) : null}
             <button className="topbar-action" onClick={onOpenInventory} type="button">Check stock</button>
             <button className="ghost-button" onClick={onOpenCustomer} type="button">Open customer</button>
           </div>
+          {statusError ? (
+            <div className="stack-item-meta" style={{ color: "#D27A62", marginTop: "0.75rem" }}>
+              {statusError}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="detail-panel">

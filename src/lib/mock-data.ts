@@ -11,7 +11,8 @@ const now = "2026-03-17T21:00:00.000Z";
 
 const orders: Order[] = [
   {
-    id: "ord-1051",
+    id: "11111111-1111-1111-1111-111111111111",
+    orderNumber: "MG-1051",
     customerName: "Ayesha Khan",
     customerEmail: "ayesha@example.com",
     customerZone: "Herndon",
@@ -28,7 +29,7 @@ const orders: Order[] = [
     items: [
       {
         id: "oi-1",
-        orderId: "ord-1051",
+        orderId: "11111111-1111-1111-1111-111111111111",
         menuItemId: "menu-nihari-tacos",
         name: "Nihari Tacos",
         quantity: 2,
@@ -37,7 +38,7 @@ const orders: Order[] = [
       },
       {
         id: "oi-2",
-        orderId: "ord-1051",
+        orderId: "11111111-1111-1111-1111-111111111111",
         menuItemId: "menu-lamb-bowl",
         name: "Lamb Bowl",
         quantity: 1,
@@ -47,7 +48,8 @@ const orders: Order[] = [
     ],
   },
   {
-    id: "ord-1052",
+    id: "22222222-2222-2222-2222-222222222222",
+    orderNumber: "MG-1052",
     customerName: "Hamza Ali",
     customerEmail: "hamza@example.com",
     customerZone: "Sterling",
@@ -64,7 +66,7 @@ const orders: Order[] = [
     items: [
       {
         id: "oi-3",
-        orderId: "ord-1052",
+        orderId: "22222222-2222-2222-2222-222222222222",
         menuItemId: "menu-karachi-wings",
         name: "Karachi Hot Wings",
         quantity: 1,
@@ -73,7 +75,7 @@ const orders: Order[] = [
       },
       {
         id: "oi-4",
-        orderId: "ord-1052",
+        orderId: "22222222-2222-2222-2222-222222222222",
         menuItemId: "menu-chicken-bowl",
         name: "Chicken Bowl",
         quantity: 1,

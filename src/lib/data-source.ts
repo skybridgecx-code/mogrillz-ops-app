@@ -55,8 +55,10 @@ function mapOrderItem(row: Row): OrderItem {
 function mapOrder(row: Row): Order {
   const nestedItems = Array.isArray(row.order_items) ? row.order_items : [];
   const fulfillmentMethod = readString(row.fulfillment_method, "delivery").toLowerCase() === "pickup" ? "pickup" : "delivery";
+  const id = readString(row.id, crypto.randomUUID());
   return {
-    id: readString(row.order_number || row.id, crypto.randomUUID()),
+    id,
+    orderNumber: readString(row.order_number, id),
     customerName: readString(row.customer_name, "Unknown Customer"),
     customerEmail: typeof row.customer_email === "string" ? row.customer_email : null,
     customerZone: readString(row.zone, "Northern Virginia"),

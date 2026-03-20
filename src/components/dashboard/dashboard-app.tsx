@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FulfillmentAnalyticsCards } from "@/components/dashboard/analytics/fulfillment-analytics-cards";
 import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
 import { FulfillmentSummaryCards } from "@/components/dashboard/overview/fulfillment-summary-cards";
 import { OverviewKpiGrid } from "@/components/dashboard/overview/overview-kpi-grid";
 import { getFulfillmentSummary } from "@/lib/dashboard/fulfillment-summary";
+import { getNextOrderStatus } from "@/lib/dashboard/order-status";
 import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orders/order-filters";
 
 import type {
@@ -92,10 +94,13 @@ export function DashboardApp({
   snapshot: DashboardSnapshot;
   dataSource: DataSourceKind;
 }) {
+  const router = useRouter();
   const [view, setView] = useState<ViewKey>("overview");
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
   const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentFilter>("all");
   const [selectedOrderId, setSelectedOrderId] = useState(snapshot.orders[0]?.id ?? "");
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusUpdatingOrderId, setStatusUpdatingOrderId] = useState<string | null>(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState(snapshot.inventory[0]?.id ?? "");
   const [selectedMenuId, setSelectedMenuId] = useState(snapshot.menu[0]?.id ?? "");
   const [selectedCustomerId, setSelectedCustomerId] = useState(snapshot.customers[0]?.id ?? "");
@@ -130,6 +135,10 @@ export function DashboardApp({
     const stillVisible = filteredOrders.some((order) => order.id === selectedOrderId);
     if (!stillVisible) setSelectedOrderId(filteredOrders[0].id);
   }, [filteredOrders, selectedOrderId]);
+
+  useEffect(() => {
+    setStatusError(null);
+  }, [selectedOrderId]);
 
   const selectedOrder = filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? null;
   const selectedInventory =
@@ -192,6 +201,46 @@ export function DashboardApp({
     setView(nextView);
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", `#${nextView}`);
+    }
+  }
+
+  async function handleAdvanceOrderStatus(orderId: string, nextStatus: Order["status"]) {
+    const currentOrder = snapshot.orders.find((order) => order.id === orderId);
+
+    if (!currentOrder) {
+      setStatusError("Order could not be found.");
+      return;
+    }
+
+    const expectedNextStatus = getNextOrderStatus(currentOrder.status);
+    if (!expectedNextStatus || expectedNextStatus !== nextStatus) {
+      setStatusError("That status change is no longer available.");
+      return;
+    }
+
+    setStatusError(null);
+    setStatusUpdatingOrderId(orderId);
+
+    try {
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || "Unable to update the order status.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to update the order status.";
+      setStatusError(message);
+    } finally {
+      setStatusUpdatingOrderId(null);
     }
   }
 
@@ -370,6 +419,9 @@ export function DashboardApp({
         }}
         onOpenInventory={() => goTo("inventory")}
         onOpenCustomer={() => goTo("customers")}
+        onAdvanceStatus={handleAdvanceOrderStatus}
+        statusError={statusError}
+        statusUpdating={statusUpdatingOrderId === selectedOrder?.id}
         formatCurrency={formatCurrency}
         statusTone={statusTone}
       />
