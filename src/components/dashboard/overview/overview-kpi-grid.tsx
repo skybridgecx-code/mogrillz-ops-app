@@ -1,13 +1,9 @@
-interface OverviewKpi {
-  label: string;
-  value: string;
-  delta: string;
-  tone: "gold" | "green" | "red" | "blue";
-}
+import type { ReactNode } from "react";
+import type { DashboardSnapshot } from "@/types/domain";
 
 interface OverviewKpiGridProps {
-  kpis: OverviewKpi[];
-  children?: React.ReactNode;
+  kpis: DashboardSnapshot["kpis"];
+  children?: ReactNode;
 }
 
 export function OverviewKpiGrid({

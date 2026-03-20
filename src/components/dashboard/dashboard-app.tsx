@@ -611,10 +611,7 @@ export function DashboardApp({
           </article>
 
           <FulfillmentAnalyticsCards
-            deliveryCount={fulfillmentSummary.deliveryCount}
-            pickupCount={fulfillmentSummary.pickupCount}
-            deliveryRevenue={fulfillmentSummary.deliveryRevenue}
-            pickupRevenue={fulfillmentSummary.pickupRevenue}
+            fulfillmentSummary={fulfillmentSummary}
             formatCurrency={formatCurrency}
           />
 
