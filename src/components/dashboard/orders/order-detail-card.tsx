@@ -18,7 +18,7 @@ export function OrderDetailCard({
       <div className="card-head">
         <div>
           <p className="card-kicker">Selected Order</p>
-          <h2 className="card-title">{selectedOrder ? `${selectedOrder.id.toUpperCase()} · ${selectedOrder.customerName}` : "Choose an order"}</h2>
+          <h2 className="card-title">{selectedOrder ? `${selectedOrder.id.toUpperCase()} · ${selectedOrder.customerName}` : "No order selected"}</h2>
         </div>
       </div>
 
@@ -63,7 +63,18 @@ export function OrderDetailCard({
             <button className="ghost-button" onClick={onOpenCustomer} type="button">Open customer</button>
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div className="detail-panel">
+          <div className="detail-hero">
+            <h3>No order selected</h3>
+            <p>Adjust or reset filters to view an order.</p>
+          </div>
+          <div className="detail-note">
+            <strong>Orders detail</strong>
+            When a matching order is available, its fulfillment details, custom request, and item breakdown will appear here.
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
