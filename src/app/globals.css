@@ -126,7 +126,8 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 16px 0 20px;
+  margin: 0 -24px 24px;
+  padding: 16px 24px 20px;
   background:
     linear-gradient(180deg, rgba(10, 10, 10, 0.96), rgba(10, 10, 10, 0.82));
   border-bottom: 1px solid var(--line);
