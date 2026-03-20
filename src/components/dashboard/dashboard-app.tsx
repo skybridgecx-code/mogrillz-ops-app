@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
+import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orders/order-filters";
 
 import type {
   DashboardSnapshot,
@@ -11,8 +13,6 @@ import type {
 
 type DataSourceKind = "mock" | "supabase";
 type ViewKey = "overview" | "orders" | "inventory" | "menu" | "customers" | "analytics" | "ai";
-type OrderFilter = "all" | "new" | "in prep" | "ready" | "delivered";
-type FulfillmentFilter = "all" | "delivery" | "pickup";
 
 const sectionMeta: Record<ViewKey, { title: string; copy: string }> = {
   overview: {
@@ -118,12 +118,16 @@ export function DashboardApp({
   }, [fulfillmentFilter, orderFilter, snapshot.orders]);
 
   useEffect(() => {
-    if (!filteredOrders.length) return;
+    if (!filteredOrders.length) {
+      setSelectedOrderId("");
+      return;
+    }
+
     const stillVisible = filteredOrders.some((order) => order.id === selectedOrderId);
     if (!stillVisible) setSelectedOrderId(filteredOrders[0].id);
   }, [filteredOrders, selectedOrderId]);
 
-  const selectedOrder = filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? snapshot.orders[0];
+  const selectedOrder = filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? null;
   const selectedInventory =
     snapshot.inventory.find((item) => item.id === selectedInventoryId) ?? snapshot.inventory[0];
 
@@ -366,163 +370,27 @@ export function DashboardApp({
 
   function renderOrders() {
     return (
-      <section className="view-panel active">
-        <div className="content-grid">
-          <article className="card card-span-2">
-            <div className="card-head">
-              <div>
-                <p className="card-kicker">Orders</p>
-                <h2 className="card-title">Live queue</h2>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", alignItems: "flex-end" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", alignItems: "flex-end" }}>
-                  <span className="card-kicker" style={{ margin: 0 }}>Status</span>
-                  <div className="filter-row">
-                    {orderFilters.map((filter) => {
-                      const count =
-                        filter === "all"
-                          ? snapshot.orders.length
-                          : snapshot.orders.filter((order) => order.status.toLowerCase() === filter).length;
-                      return (
-                        <button
-                          className={`filter-chip ${orderFilter === filter ? "is-active" : ""}`}
-                          key={filter}
-                          onClick={() => setOrderFilter(filter)}
-                          type="button"
-                        >
-                          {filter} ({count})
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", alignItems: "flex-end" }}>
-                  <span className="card-kicker" style={{ margin: 0 }}>Fulfillment</span>
-                  <div className="filter-row">
-                    {fulfillmentFilters.map((filter) => {
-                      const count =
-                        filter === "all"
-                          ? snapshot.orders.length
-                          : snapshot.orders.filter((order) => order.fulfillmentMethod === filter).length;
-                      return (
-                        <button
-                          className={`filter-chip ${fulfillmentFilter === filter ? "is-active" : ""}`}
-                          key={filter}
-                          onClick={() => setFulfillmentFilter(filter)}
-                          type="button"
-                        >
-                          {filter} ({count})
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", marginBottom: "1rem", color: "rgba(255,255,255,0.72)", fontSize: "0.9rem" }}>
-              <span>{filteredOrders.length} matching orders</span>
-              <span>Showing {fulfillmentFilter === "all" ? "delivery + pickup" : fulfillmentFilter}</span>
-            </div>
-
-            <div className="table-wrap">
-              <table className="ops-table">
-                <thead>
-                  <tr>
-                    <th>Order</th>
-                    <th>Customer</th>
-                    <th>Items</th>
-                    <th>Fulfillment</th>
-                    <th>Status</th>
-                    <th>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredOrders.map((order) => (
-                    <tr
-                      className={order.id === selectedOrderId ? "is-selected" : ""}
-                      key={order.id}
-                      onClick={() => setSelectedOrderId(order.id)}
-                    >
-                      <td>
-                        <div className="row-name">
-                          <strong>{order.id.toUpperCase()}</strong>
-                          <span className="row-subtle">{order.paymentProvider} checkout</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="row-name">
-                          <strong>{order.customerName}</strong>
-                          <span className="row-subtle">{order.customerZone}</span>
-                        </div>
-                      </td>
-                      <td>{order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}</td>
-                      <td>
-                        <div>{order.fulfillmentMethod === "pickup" ? "Pickup" : "Delivery"}</div>
-                        <span className="row-subtle">{order.deliveryWindow}</span>
-                      </td>
-                      <td><span className={`status-pill ${statusTone(order.status)}`}>{order.status}</span></td>
-                      <td>{formatCurrency(order.totalCents)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </article>
-
-          <aside className="detail-card">
-            <div className="card-head">
-              <div>
-                <p className="card-kicker">Selected Order</p>
-                <h2 className="card-title">{selectedOrder ? `${selectedOrder.id.toUpperCase()} · ${selectedOrder.customerName}` : "Choose an order"}</h2>
-              </div>
-            </div>
-
-            {selectedOrder ? (
-              <div className="detail-panel">
-                <div className="detail-hero">
-                  <h3>{selectedOrder.status}</h3>
-                  <p>
-                    {selectedOrder.fulfillmentMethod === "pickup"
-                      ? `Pickup. ${selectedOrder.deliveryWindow}. Total ${formatCurrency(selectedOrder.totalCents)}.`
-                      : `Delivery. ${selectedOrder.deliveryWindow}. Zone: ${selectedOrder.customerZone}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
-                  </p>
-                </div>
-                <div className="detail-note">
-                  <strong>Custom request</strong>
-                  {selectedOrder.customRequest ?? "No custom request on this order."}
-                </div>
-                <div className="detail-list">
-                  {selectedOrder.items.map((item) => (
-                    <div className="detail-list-item" key={item.id}>
-                      <span>
-                        <strong>{item.quantity}x {item.name}</strong>
-                        {item.notes ? <><br />{item.notes}</> : null}
-                      </span>
-                      <span>{item.notes ? "Customized" : "Standard"}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="timeline">
-                  {["Placed", "Packed", selectedOrder.status].map((step, index) => (
-                    <div className="timeline-item done" key={`${selectedOrder.id}-${step}-${index}`}>
-                      <div className="timeline-dot" />
-                      <div className="timeline-copy">
-                        <strong>{step}</strong>
-                        <span>{index === 2 ? "Most recent queue state." : "Completed stage in the flow."}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="detail-actions">
-                  <button className="topbar-action" onClick={() => goTo("inventory")} type="button">Check stock</button>
-                  <button className="ghost-button" onClick={() => goTo("customers")} type="button">Open customer</button>
-                </div>
-              </div>
-            ) : null}
-          </aside>
-        </div>
-      </section>
+      <OrdersPanel
+        orders={snapshot.orders}
+        filteredOrders={filteredOrders}
+        selectedOrder={selectedOrder}
+        selectedOrderId={selectedOrderId}
+        orderFilter={orderFilter}
+        fulfillmentFilter={fulfillmentFilter}
+        orderFilters={orderFilters}
+        fulfillmentFilters={fulfillmentFilters}
+        onOrderFilterChange={setOrderFilter}
+        onFulfillmentFilterChange={setFulfillmentFilter}
+        onSelectOrder={setSelectedOrderId}
+        onResetFilters={() => {
+          setOrderFilter("all");
+          setFulfillmentFilter("all");
+        }}
+        onOpenInventory={() => goTo("inventory")}
+        onOpenCustomer={() => goTo("customers")}
+        formatCurrency={formatCurrency}
+        statusTone={statusTone}
+      />
     );
   }
 
