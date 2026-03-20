@@ -12,6 +12,7 @@ import type {
 type DataSourceKind = "mock" | "supabase";
 type ViewKey = "overview" | "orders" | "inventory" | "menu" | "customers" | "analytics" | "ai";
 type OrderFilter = "all" | "new" | "in prep" | "ready" | "delivered";
+type FulfillmentFilter = "all" | "delivery" | "pickup";
 
 const sectionMeta: Record<ViewKey, { title: string; copy: string }> = {
   overview: {
@@ -89,6 +90,7 @@ export function DashboardApp({
 }) {
   const [view, setView] = useState<ViewKey>("overview");
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentFilter>("all");
   const [selectedOrderId, setSelectedOrderId] = useState(snapshot.orders[0]?.id ?? "");
   const [selectedInventoryId, setSelectedInventoryId] = useState(snapshot.inventory[0]?.id ?? "");
   const [selectedMenuId, setSelectedMenuId] = useState(snapshot.menu[0]?.id ?? "");
@@ -108,11 +110,20 @@ export function DashboardApp({
   }, []);
 
   const filteredOrders = useMemo(() => {
-    if (orderFilter === "all") return snapshot.orders;
-    return snapshot.orders.filter((order) => order.status.toLowerCase() === orderFilter);
-  }, [orderFilter, snapshot.orders]);
+    return snapshot.orders.filter((order) => {
+      const statusMatch = orderFilter === "all" || order.status.toLowerCase() === orderFilter;
+      const fulfillmentMatch = fulfillmentFilter === "all" || order.fulfillmentMethod === fulfillmentFilter;
+      return statusMatch && fulfillmentMatch;
+    });
+  }, [fulfillmentFilter, orderFilter, snapshot.orders]);
 
-  const selectedOrder = snapshot.orders.find((order) => order.id === selectedOrderId) ?? snapshot.orders[0];
+  useEffect(() => {
+    if (!filteredOrders.length) return;
+    const stillVisible = filteredOrders.some((order) => order.id === selectedOrderId);
+    if (!stillVisible) setSelectedOrderId(filteredOrders[0].id);
+  }, [filteredOrders, selectedOrderId]);
+
+  const selectedOrder = filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? snapshot.orders[0];
   const selectedInventory =
     snapshot.inventory.find((item) => item.id === selectedInventoryId) ?? snapshot.inventory[0];
 
@@ -163,6 +174,18 @@ export function DashboardApp({
   );
 
   const orderFilters: OrderFilter[] = ["all", "new", "in prep", "ready", "delivered"];
+  const fulfillmentFilters: FulfillmentFilter[] = ["all", "delivery", "pickup"];
+
+  const fulfillmentSummary = useMemo(() => {
+    const deliveryOrders = snapshot.orders.filter((order) => order.fulfillmentMethod === "delivery");
+    const pickupOrders = snapshot.orders.filter((order) => order.fulfillmentMethod === "pickup");
+    return {
+      deliveryCount: deliveryOrders.length,
+      pickupCount: pickupOrders.length,
+      deliveryRevenue: deliveryOrders.reduce((sum, order) => sum + order.totalCents, 0),
+      pickupRevenue: pickupOrders.reduce((sum, order) => sum + order.totalCents, 0),
+    };
+  }, [snapshot.orders]);
 
   const currentSection = sectionMeta[view];
 
@@ -184,6 +207,16 @@ export function DashboardApp({
               <div className="kpi-delta">{kpi.delta}</div>
             </article>
           ))}
+          <article className="card kpi-card">
+            <div className="kpi-label">Delivery Orders</div>
+            <div className="kpi-value">{fulfillmentSummary.deliveryCount}</div>
+            <div className="kpi-delta">{formatCurrency(fulfillmentSummary.deliveryRevenue)} in delivery revenue</div>
+          </article>
+          <article className="card kpi-card">
+            <div className="kpi-label">Pickup Orders</div>
+            <div className="kpi-value">{fulfillmentSummary.pickupCount}</div>
+            <div className="kpi-delta">{formatCurrency(fulfillmentSummary.pickupRevenue)} in pickup revenue</div>
+          </article>
         </div>
 
         <div className="overview-grid">
@@ -341,24 +374,55 @@ export function DashboardApp({
                 <p className="card-kicker">Orders</p>
                 <h2 className="card-title">Live queue</h2>
               </div>
-              <div className="filter-row">
-                {orderFilters.map((filter) => {
-                  const count =
-                    filter === "all"
-                      ? snapshot.orders.length
-                      : snapshot.orders.filter((order) => order.status.toLowerCase() === filter).length;
-                  return (
-                    <button
-                      className={`filter-chip ${orderFilter === filter ? "is-active" : ""}`}
-                      key={filter}
-                      onClick={() => setOrderFilter(filter)}
-                      type="button"
-                    >
-                      {filter} ({count})
-                    </button>
-                  );
-                })}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", alignItems: "flex-end" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", alignItems: "flex-end" }}>
+                  <span className="card-kicker" style={{ margin: 0 }}>Status</span>
+                  <div className="filter-row">
+                    {orderFilters.map((filter) => {
+                      const count =
+                        filter === "all"
+                          ? snapshot.orders.length
+                          : snapshot.orders.filter((order) => order.status.toLowerCase() === filter).length;
+                      return (
+                        <button
+                          className={`filter-chip ${orderFilter === filter ? "is-active" : ""}`}
+                          key={filter}
+                          onClick={() => setOrderFilter(filter)}
+                          type="button"
+                        >
+                          {filter} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", alignItems: "flex-end" }}>
+                  <span className="card-kicker" style={{ margin: 0 }}>Fulfillment</span>
+                  <div className="filter-row">
+                    {fulfillmentFilters.map((filter) => {
+                      const count =
+                        filter === "all"
+                          ? snapshot.orders.length
+                          : snapshot.orders.filter((order) => order.fulfillmentMethod === filter).length;
+                      return (
+                        <button
+                          className={`filter-chip ${fulfillmentFilter === filter ? "is-active" : ""}`}
+                          key={filter}
+                          onClick={() => setFulfillmentFilter(filter)}
+                          type="button"
+                        >
+                          {filter} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", marginBottom: "1rem", color: "rgba(255,255,255,0.72)", fontSize: "0.9rem" }}>
+              <span>{filteredOrders.length} matching orders</span>
+              <span>Showing {fulfillmentFilter === "all" ? "delivery + pickup" : fulfillmentFilter}</span>
             </div>
 
             <div className="table-wrap">
