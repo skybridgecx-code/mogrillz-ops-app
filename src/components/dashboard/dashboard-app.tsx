@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { FulfillmentAnalyticsCards } from "@/components/dashboard/analytics/fulfillment-analytics-cards";
 import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
 import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orders/order-filters";
 
@@ -627,6 +628,14 @@ export function DashboardApp({
               ))}
             </div>
           </article>
+
+          <FulfillmentAnalyticsCards
+            deliveryCount={fulfillmentSummary.deliveryCount}
+            pickupCount={fulfillmentSummary.pickupCount}
+            deliveryRevenue={fulfillmentSummary.deliveryRevenue}
+            pickupRevenue={fulfillmentSummary.pickupRevenue}
+            formatCurrency={formatCurrency}
+          />
 
           <article className="card">
             <div className="card-head">
