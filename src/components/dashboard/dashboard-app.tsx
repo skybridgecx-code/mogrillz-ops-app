@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FulfillmentAnalyticsCards } from "@/components/dashboard/analytics/fulfillment-analytics-cards";
 import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
+import { getFulfillmentSummary } from "@/lib/dashboard/fulfillment-summary";
 import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orders/order-filters";
 
 import type {
@@ -181,16 +182,7 @@ export function DashboardApp({
   const orderFilters: OrderFilter[] = ["all", "new", "in prep", "ready", "delivered"];
   const fulfillmentFilters: FulfillmentFilter[] = ["all", "delivery", "pickup"];
 
-  const fulfillmentSummary = useMemo(() => {
-    const deliveryOrders = snapshot.orders.filter((order) => order.fulfillmentMethod === "delivery");
-    const pickupOrders = snapshot.orders.filter((order) => order.fulfillmentMethod === "pickup");
-    return {
-      deliveryCount: deliveryOrders.length,
-      pickupCount: pickupOrders.length,
-      deliveryRevenue: deliveryOrders.reduce((sum, order) => sum + order.totalCents, 0),
-      pickupRevenue: pickupOrders.reduce((sum, order) => sum + order.totalCents, 0),
-    };
-  }, [snapshot.orders]);
+  const fulfillmentSummary = useMemo(() => getFulfillmentSummary(snapshot.orders), [snapshot.orders]);
 
   const currentSection = sectionMeta[view];
 
