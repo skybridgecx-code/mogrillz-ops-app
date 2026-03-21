@@ -1,5 +1,8 @@
-import type { Order } from "@/types/domain";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
 import { getNextOrderStatus, getOrderStatusActionLabel } from "@/lib/dashboard/order-status";
+import type { Order } from "@/types/domain";
 
 interface OrderDetailCardProps {
   selectedOrder: Order | null;
@@ -20,8 +23,47 @@ export function OrderDetailCard({
   statusUpdating,
   formatCurrency,
 }: OrderDetailCardProps) {
+  const router = useRouter();
   const nextStatus = selectedOrder ? getNextOrderStatus(selectedOrder.status) : null;
   const nextActionLabel = selectedOrder ? getOrderStatusActionLabel(selectedOrder.status) : null;
+  const [noteDraft, setNoteDraft] = useState(selectedOrder?.operatorNote ?? "");
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [noteSaving, setNoteSaving] = useState(false);
+
+  useEffect(() => {
+    setNoteDraft(selectedOrder?.operatorNote ?? "");
+    setNoteError(null);
+    setNoteSaving(false);
+  }, [selectedOrder?.id, selectedOrder?.operatorNote]);
+
+  async function handleSaveOperatorNote() {
+    if (!selectedOrder) return;
+
+    setNoteError(null);
+    setNoteSaving(true);
+
+    try {
+      const response = await fetch(`/api/orders/${selectedOrder.id}/note`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ operatorNote: noteDraft }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || "Unable to save the operator note.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to save the operator note.";
+      setNoteError(message);
+    } finally {
+      setNoteSaving(false);
+    }
+  }
 
   return (
     <aside className="detail-card">
@@ -45,6 +87,25 @@ export function OrderDetailCard({
           <div className="detail-note">
             <strong>Custom request</strong>
             {selectedOrder.customRequest ?? "No custom request on this order."}
+          </div>
+          <div className="detail-note">
+            <strong>Internal operator note</strong>
+            <textarea
+              onChange={(event) => setNoteDraft(event.target.value)}
+              placeholder="Add internal context for prep, dispatch, or handoff."
+              style={{
+                width: "100%",
+                minHeight: "108px",
+                marginTop: "0.8rem",
+                padding: "0.9rem 1rem",
+                borderRadius: "14px",
+                border: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(255,255,255,0.03)",
+                color: "inherit",
+                resize: "vertical",
+              }}
+              value={noteDraft}
+            />
           </div>
           <div className="detail-list">
             {selectedOrder.items.map((item) => (
@@ -81,10 +142,23 @@ export function OrderDetailCard({
             ) : null}
             <button className="topbar-action" onClick={onOpenInventory} type="button">Check stock</button>
             <button className="ghost-button" onClick={onOpenCustomer} type="button">Open customer</button>
+            <button
+              className="ghost-button"
+              disabled={noteSaving || noteDraft === (selectedOrder.operatorNote ?? "")}
+              onClick={handleSaveOperatorNote}
+              type="button"
+            >
+              {noteSaving ? "Saving note..." : "Save internal note"}
+            </button>
           </div>
           {statusError ? (
             <div className="stack-item-meta" style={{ color: "#D27A62", marginTop: "0.75rem" }}>
               {statusError}
+            </div>
+          ) : null}
+          {noteError ? (
+            <div className="stack-item-meta" style={{ color: "#D27A62", marginTop: "0.75rem" }}>
+              {noteError}
             </div>
           ) : null}
         </div>

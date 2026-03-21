@@ -73,6 +73,7 @@ function mapOrder(row: Row): Order {
     ),
     totalCents: readNumber(row.total_cents, 0),
     customRequest: typeof row.custom_request === "string" ? row.custom_request : null,
+    operatorNote: typeof row.operator_note === "string" ? row.operator_note : null,
     paymentProvider: readString(row.payment_provider, "Stripe"),
     paymentStatus: readString(row.payment_status, "paid"),
     createdAt: readString(row.created_at, new Date().toISOString()),

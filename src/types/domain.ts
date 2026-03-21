@@ -32,6 +32,7 @@ export interface Order {
   deliveryWindow: string;
   totalCents: number;
   customRequest: string | null;
+  operatorNote?: string | null;
   paymentProvider: string;
   paymentStatus: string;
   createdAt: string;
