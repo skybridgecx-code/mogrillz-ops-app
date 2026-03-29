@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { getNextOrderStatus, isValidForwardOrderStatusTransition } from "@/lib/dashboard/order-status";
+import {
+  getNextOrderStatus,
+  isValidForwardOrderStatusTransition,
+  normalizeOrderStatus,
+} from "@/lib/dashboard/order-status";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { userHasAdminMembership } from "@/lib/supabase/access";
@@ -11,17 +15,7 @@ type RouteContext = {
 };
 
 function readRequestedStatus(value: unknown): OrderStatus | null {
-  if (
-    value === "New" ||
-    value === "In Prep" ||
-    value === "Ready" ||
-    value === "Delivered" ||
-    value === "Cancelled"
-  ) {
-    return value;
-  }
-
-  return null;
+  return normalizeOrderStatus(value);
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -77,7 +71,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
 
-  const currentStatus = readRequestedStatus(currentOrderResult.data.status);
+  const currentStatus = normalizeOrderStatus(currentOrderResult.data.status);
   if (!currentStatus) {
     return NextResponse.json({ error: "Order has an unsupported status." }, { status: 400 });
   }

@@ -12,6 +12,7 @@ import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orde
 
 import type {
   DashboardSnapshot,
+  DropReminder,
   InventoryItem,
   MenuItem,
   Order,
@@ -71,7 +72,7 @@ function formatCurrency(cents: number) {
 
 function statusTone(status: string) {
   const normalized = status.toLowerCase();
-  if (normalized.includes("delivered") || normalized.includes("ready") || normalized.includes("healthy") || normalized.includes("live") || normalized.includes("vip")) {
+  if (normalized.includes("delivered") || normalized.includes("ready") || normalized.includes("healthy") || normalized.includes("live") || normalized.includes("vip") || normalized.includes("active")) {
     return "success";
   }
   if (normalized.includes("prep") || normalized.includes("watch") || normalized.includes("open") || normalized.includes("rising")) {
@@ -87,13 +88,58 @@ function getOrderVolumeLabel(snapshot: DashboardSnapshot) {
   return `${snapshot.orders.length} live orders`;
 }
 
+const EMPTY_SNAPSHOT: DashboardSnapshot = {
+  generatedAt: new Date(0).toISOString(),
+  drop: {
+    day: "Monday",
+    status: "Supabase Unavailable",
+    window: "Awaiting live data",
+    cutoff: "Retry when the connection is healthy",
+  },
+  kpis: [],
+  orders: [],
+  inventory: [],
+  menu: [],
+  customers: [],
+  dropReminders: [],
+  insights: [],
+};
+
+function formatReminderSource(reminder: DropReminder) {
+  const parts = [reminder.source, reminder.signupLocation].filter(Boolean);
+  return parts
+    .map((part) => part!.replace(/[-_]+/g, " "))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" · ");
+}
+
+function getInventoryImpactCopy(item: InventoryItem) {
+  const linkedNames = item.linkedMenuItems.map((linkedItem) => linkedItem.name);
+  const linkedCopy = linkedNames.length
+    ? `Linked to ${linkedNames.join(", ")}.`
+    : "No linked menu items recorded yet.";
+
+  if (item.status === "Low" || item.status === "Out") {
+    return `${linkedCopy} This item could tighten the next drop fast.`;
+  }
+
+  if (item.status === "Watch") {
+    return `${linkedCopy} Coverage is workable, but there is not much slack.`;
+  }
+
+  return `${linkedCopy} Coverage is healthy for the current cycle.`;
+}
+
 export function DashboardApp({
-  snapshot,
+  snapshot: initialSnapshot,
   dataSource,
+  dataIssue = null,
 }: {
-  snapshot: DashboardSnapshot;
+  snapshot: DashboardSnapshot | null;
   dataSource: DataSourceKind;
+  dataIssue?: string | null;
 }) {
+  const snapshot = initialSnapshot ?? EMPTY_SNAPSHOT;
   const router = useRouter();
   const [view, setView] = useState<ViewKey>("overview");
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
@@ -104,6 +150,7 @@ export function DashboardApp({
   const [selectedInventoryId, setSelectedInventoryId] = useState(snapshot.inventory[0]?.id ?? "");
   const [selectedMenuId, setSelectedMenuId] = useState(snapshot.menu[0]?.id ?? "");
   const [selectedCustomerId, setSelectedCustomerId] = useState(snapshot.customers[0]?.id ?? "");
+  const [reminderActionMessage, setReminderActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const syncHash = () => {
@@ -143,6 +190,7 @@ export function DashboardApp({
   const selectedOrder = filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? null;
   const selectedInventory =
     snapshot.inventory.find((item) => item.id === selectedInventoryId) ?? snapshot.inventory[0];
+  const selectedMenu = snapshot.menu.find((item) => item.id === selectedMenuId) ?? snapshot.menu[0];
 
   const pipeline = useMemo(() => {
     const count = (status: Order["status"]) => snapshot.orders.filter((order) => order.status === status).length;
@@ -157,6 +205,27 @@ export function DashboardApp({
   const lowStockItems = useMemo(
     () => snapshot.inventory.filter((item) => item.status === "Low" || item.status === "Out"),
     [snapshot.inventory],
+  );
+
+  const inventoryDependenciesByMenuId = useMemo(() => {
+    const dependencies = new Map<string, InventoryItem[]>();
+
+    for (const item of snapshot.inventory) {
+      for (const linkedMenuItem of item.linkedMenuItems) {
+        const existing = dependencies.get(linkedMenuItem.id) ?? [];
+        existing.push(item);
+        dependencies.set(linkedMenuItem.id, existing);
+      }
+    }
+
+    return dependencies;
+  }, [snapshot.inventory]);
+
+  const selectedMenuDependencies = selectedMenu
+    ? inventoryDependenciesByMenuId.get(selectedMenu.id) ?? []
+    : [];
+  const selectedMenuRiskItems = selectedMenuDependencies.filter(
+    (item) => item.status === "Low" || item.status === "Out",
   );
 
   const prepTargets = useMemo(
@@ -177,6 +246,43 @@ export function DashboardApp({
         .slice(0, 3),
     [snapshot.customers],
   );
+
+  const reminderSummary = useMemo(() => {
+    const activeCount = snapshot.dropReminders.filter((reminder) => reminder.status === "Active").length;
+    const recentCount = snapshot.dropReminders.filter((reminder) => {
+      const requestedAt = new Date(reminder.lastRequestedAt).getTime();
+      return Number.isFinite(requestedAt) && requestedAt >= Date.now() - 7 * 24 * 60 * 60 * 1000;
+    }).length;
+
+    return {
+      activeCount,
+      recentCount,
+      reminders: [...snapshot.dropReminders].sort(
+        (a, b) => new Date(b.lastRequestedAt).getTime() - new Date(a.lastRequestedAt).getTime(),
+      ),
+    };
+  }, [snapshot.dropReminders]);
+
+  const activeReminderEmails = useMemo(
+    () =>
+      reminderSummary.reminders
+        .filter((reminder) => reminder.status === "Active")
+        .map((reminder) => reminder.email)
+        .filter(Boolean),
+    [reminderSummary.reminders],
+  );
+
+  const latestInsightByType = useMemo(() => {
+    const sortedInsights = [...snapshot.insights].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    return {
+      content: sortedInsights.find((insight) => insight.type === "content") ?? null,
+      demand: sortedInsights.find((insight) => insight.type === "demand") ?? null,
+      prep: sortedInsights.find((insight) => insight.type === "prep") ?? null,
+    };
+  }, [snapshot.insights]);
 
   const analyticsBars = useMemo(
     () =>
@@ -311,9 +417,10 @@ export function DashboardApp({
                     <div className="stack-item-title">{item.name}</div>
                     <span className={`status-pill ${statusTone(item.status)}`}>{item.status}</span>
                   </div>
-                  <div className="stack-item-copy">{item.notes ?? "Inventory pressure needs operator attention."}</div>
+                  <div className="stack-item-copy">{getInventoryImpactCopy(item)}</div>
                   <div className="stack-item-meta">
                     {item.onHand} {item.unit} on hand · par {item.parLevel}
+                    {item.notes ? ` · ${item.notes}` : ""}
                   </div>
                 </div>
               ))}
@@ -350,16 +457,27 @@ export function DashboardApp({
               <button className="ghost-button" onClick={() => goTo("ai")} type="button">Open AI layer</button>
             </div>
             <div className="insight-grid">
-              {snapshot.insights.map((insight) => (
-                <article className="insight-card" key={insight.id}>
+              {snapshot.insights.length ? (
+                snapshot.insights.map((insight) => (
+                  <article className="insight-card" key={insight.id}>
+                    <div className="insight-meta">
+                      <div className="insight-title">{insight.title}</div>
+                      <span className={`status-pill ${statusTone(insight.tone)}`}>{insight.confidence}%</span>
+                    </div>
+                    <div className="insight-copy">{insight.summary}</div>
+                    <div className="stack-item-meta">{insight.actionText}</div>
+                  </article>
+                ))
+              ) : (
+                <article className="insight-card">
                   <div className="insight-meta">
-                    <div className="insight-title">{insight.title}</div>
-                    <span className={`status-pill ${statusTone(insight.tone)}`}>{insight.confidence}%</span>
+                    <div className="insight-title">No live AI insights</div>
+                    <span className="status-pill">Awaiting signal</span>
                   </div>
-                  <div className="insight-copy">{insight.summary}</div>
-                  <div className="stack-item-meta">{insight.actionText}</div>
+                  <div className="insight-copy">The dashboard will surface prep, demand, ops, and content guidance here once insight rows are available.</div>
+                  <div className="stack-item-meta">Check the insights table or refresh after new sync activity.</div>
                 </article>
-              ))}
+              )}
             </div>
           </article>
 
@@ -367,30 +485,42 @@ export function DashboardApp({
             <div className="card-head">
               <div>
                 <p className="card-kicker">Campaign and Comms</p>
-                <h2 className="card-title">AI channel status</h2>
+                <h2 className="card-title">Live signal mix</h2>
               </div>
             </div>
             <div className="stack-list">
               <div className="stack-item">
                 <div className="stack-item-head">
-                  <div className="stack-item-title">Website Concierge</div>
-                  <span className="status-pill success">Live now</span>
+                  <div className="stack-item-title">Content Signal</div>
+                  <span className={`status-pill ${latestInsightByType.content ? statusTone(latestInsightByType.content.tone) : ""}`}>
+                    {latestInsightByType.content ? `${latestInsightByType.content.confidence}% confidence` : "No content signal"}
+                  </span>
                 </div>
-                <div className="stack-item-copy">Customer-facing FAQ assistant running on the public site.</div>
+                <div className="stack-item-copy">
+                  {latestInsightByType.content?.summary ?? "No live content insight is available yet for campaign guidance."}
+                </div>
               </div>
               <div className="stack-item">
                 <div className="stack-item-head">
-                  <div className="stack-item-title">Social Campaign Agent</div>
-                  <span className="status-pill warning">Internal tool</span>
+                  <div className="stack-item-title">Demand Signal</div>
+                  <span className={`status-pill ${latestInsightByType.demand ? statusTone(latestInsightByType.demand.tone) : ""}`}>
+                    {latestInsightByType.demand ? `${latestInsightByType.demand.confidence}% confidence` : "No demand signal"}
+                  </span>
                 </div>
-                <div className="stack-item-copy">Weekly content generation surface for Instagram and TikTok planning.</div>
+                <div className="stack-item-copy">
+                  {latestInsightByType.demand?.summary ?? "No live demand signal is available yet from the current orders feed."}
+                </div>
               </div>
               <div className="stack-item">
                 <div className="stack-item-head">
-                  <div className="stack-item-title">Voice AI Pilot</div>
-                  <span className="status-pill danger">Next build</span>
+                  <div className="stack-item-title">Prep Signal</div>
+                  <span className={`status-pill ${latestInsightByType.prep ? statusTone(latestInsightByType.prep.tone) : ""}`}>
+                    {latestInsightByType.prep ? `${latestInsightByType.prep.confidence}% confidence` : "No prep signal"}
+                  </span>
                 </div>
-                <div className="stack-item-copy">Best next MoGrillz dogfood surface for your AI call-center services.</div>
+                <div className="stack-item-copy">
+                  {latestInsightByType.prep?.summary ?? "No live prep signal is available yet from the current inventory and order mix."}
+                </div>
               </div>
             </div>
           </article>
@@ -429,16 +559,6 @@ export function DashboardApp({
   }
 
   function renderInventory() {
-    const recommendation = (item: InventoryItem) => {
-      if (item.status === "Low" || item.status === "Out") {
-        return "Replenish before the next preorder cutoff so bowls and rolls do not lose key garnish coverage.";
-      }
-      if (item.status === "Watch") {
-        return "Monitor through the rest of tonight and top up if the next few orders keep the same mix.";
-      }
-      return "Coverage is healthy. No immediate action needed beyond routine prep discipline.";
-    };
-
     return (
       <section className="view-panel active">
         <div className="content-grid">
@@ -459,12 +579,14 @@ export function DashboardApp({
                     <th>Par</th>
                     <th>Coverage</th>
                     <th>Status</th>
-                    <th>Action</th>
+                    <th>Signal</th>
                   </tr>
                 </thead>
                 <tbody>
                   {snapshot.inventory.map((item) => {
-                    const coverage = Math.min(Math.round((item.onHand / item.parLevel) * 100), 100);
+                    const coverage = item.parLevel > 0
+                      ? Math.min(Math.round((item.onHand / item.parLevel) * 100), 100)
+                      : 100;
                     return (
                       <tr
                         className={item.id === selectedInventoryId ? "is-selected" : ""}
@@ -485,7 +607,9 @@ export function DashboardApp({
                           </div>
                         </td>
                         <td><span className={`status-pill ${statusTone(item.status)}`}>{item.status}</span></td>
-                        <td>{item.notes ?? "Monitor"}</td>
+                        <td>
+                          {item.notes ?? "Inventory pressure needs operator attention."}
+                        </td>
                       </tr>
                     );
                   })}
@@ -511,14 +635,32 @@ export function DashboardApp({
                 </div>
                 <div className="detail-note">
                   <strong>Recommended next move</strong>
-                  {recommendation(selectedInventory)}
+                  {selectedInventory.status === "Low" || selectedInventory.status === "Out"
+                    ? "Replenish before the next preorder cutoff so bowls and rolls do not lose key garnish coverage."
+                    : selectedInventory.status === "Watch"
+                      ? "Monitor through the rest of tonight and top up if the next few orders keep the same mix."
+                      : "Coverage is healthy. No immediate action needed beyond routine prep discipline."}
                 </div>
                 <div className="detail-list">
                   <div className="detail-list-item"><span>Last updated</span><strong>{new Date(selectedInventory.lastUpdatedAt).toLocaleString()}</strong></div>
-                  <div className="detail-list-item"><span>Used by</span><strong>{/onion|cilantro|cheese/i.test(selectedInventory.name) ? "Bowls and rolls" : "Core menu items"}</strong></div>
+                  <div className="detail-list-item">
+                    <span>Linked menu signal</span>
+                    <strong>
+                      {selectedInventory.linkedMenuItems.length
+                        ? selectedInventory.linkedMenuItems.map((item) => item.name).join(", ")
+                        : "No linked menu items recorded yet"}
+                    </strong>
+                  </div>
+                  <div className="detail-list-item">
+                    <span>Recorded context</span>
+                    <strong>{selectedInventory.notes ?? "No prep note is recorded for this item yet."}</strong>
+                  </div>
+                </div>
+                <div className="detail-note">
+                  <strong>Update stock and context</strong>
+                  Keep the queue honest by updating what is actually on hand before the next prep window tightens up.
                 </div>
                 <div className="detail-actions">
-                  <button className="topbar-action" type="button">Adjust stock</button>
                   <button className="ghost-button" onClick={() => goTo("menu")} type="button">See menu impact</button>
                 </div>
               </div>
@@ -532,82 +674,255 @@ export function DashboardApp({
   function renderMenu() {
     return (
       <section className="view-panel active">
-        <div className="card">
-          <div className="card-head">
-            <div>
-              <p className="card-kicker">Menu Control</p>
-              <h2 className="card-title">Allocation and availability</h2>
+        <div className="content-grid">
+          <div className="card">
+            <div className="card-head">
+              <div>
+                <p className="card-kicker">Menu Control</p>
+                <h2 className="card-title">Allocation and availability</h2>
+              </div>
+              <button className="ghost-button" type="button">Publish next drop</button>
             </div>
-            <button className="ghost-button" type="button">Publish next drop</button>
-          </div>
-          <div className="menu-control-grid">
-            {snapshot.menu.map((item: MenuItem) => (
-              <article
-                className={`menu-card ${item.id === selectedMenuId ? "is-selected" : ""}`}
-                key={item.id}
-                onClick={() => setSelectedMenuId(item.id)}
-              >
-                <div className="menu-card-meta">
-                  <div>
-                    <div className="menu-card-title">{item.name}</div>
-                    <div className="stack-item-meta">{item.category} · {formatCurrency(item.priceCents)}</div>
+            <div className="menu-control-grid">
+              {snapshot.menu.map((item: MenuItem) => (
+                <article
+                  className={`menu-card ${item.id === selectedMenuId ? "is-selected" : ""}`}
+                  key={item.id}
+                  onClick={() => setSelectedMenuId(item.id)}
+                >
+                  <div className="menu-card-meta">
+                    <div>
+                      <div className="menu-card-title">{item.name}</div>
+                      <div className="stack-item-meta">{item.category} · {formatCurrency(item.priceCents)}</div>
+                    </div>
+                    <span className={`status-pill ${statusTone(item.availability)}`}>{item.availability}</span>
                   </div>
-                  <span className={`status-pill ${statusTone(item.availability)}`}>{item.availability}</span>
+                  <div className="menu-card-copy">{item.description}</div>
+                  <div className="metric-bar">
+                    <label>
+                      <span className="stack-item-meta">Allocation fill</span>
+                      <span className="stack-item-meta">{item.allocationLimit}%</span>
+                    </label>
+                    <div className="metric-track">
+                      <div className="metric-fill" style={{ width: `${item.allocationLimit}%` }} />
+                    </div>
+                  </div>
+                  <div className="menu-card-footer">
+                    <span className="chip">{item.isFeatured ? "Featured" : "Menu"}</span>
+                    <span className="stack-item-meta">{item.notes}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <aside className="detail-card">
+            <div className="card-head">
+              <div>
+                <p className="card-kicker">Merchandising Control</p>
+                <h2 className="card-title">{selectedMenu?.name ?? "Select a menu item"}</h2>
+              </div>
+            </div>
+            {selectedMenu ? (
+              <div className="detail-panel">
+                <div className="detail-hero">
+                  <h3>{selectedMenu.availability}</h3>
+                  <p>
+                    {formatCurrency(selectedMenu.priceCents)} · {selectedMenu.category} · allocation target {selectedMenu.allocationLimit}%.
+                  </p>
                 </div>
-                <div className="menu-card-copy">{item.description}</div>
-                <div className="metric-bar">
-                  <label>
-                    <span className="stack-item-meta">Allocation fill</span>
-                    <span className="stack-item-meta">{item.allocationLimit}%</span>
-                  </label>
-                  <div className="metric-track">
-                    <div className="metric-fill" style={{ width: `${item.allocationLimit}%` }} />
+                <div className="detail-note">
+                  <strong>Current menu read</strong>
+                  {selectedMenu.description}
+                </div>
+                <div className="detail-list">
+                  <div className="detail-list-item">
+                    <span>Ingredient dependencies</span>
+                    <strong>
+                      {selectedMenuDependencies.length
+                        ? selectedMenuDependencies.map((item) => item.name).join(", ")
+                        : "No linked inventory items recorded yet"}
+                    </strong>
+                  </div>
+                  <div className="detail-list-item">
+                    <span>Current inventory risk</span>
+                    <strong>
+                      {selectedMenuRiskItems.length
+                        ? `${selectedMenuRiskItems.length} flagged ingredient${selectedMenuRiskItems.length === 1 ? "" : "s"}`
+                        : selectedMenuDependencies.length
+                          ? "No linked ingredient is currently flagged"
+                          : "No linked ingredient is currently flagged"}
+                    </strong>
+                  </div>
+                  <div className="detail-list-item">
+                    <span>Current merchandising note</span>
+                    <strong>{selectedMenu.notes ?? "No internal merchandising note yet."}</strong>
                   </div>
                 </div>
-                <div className="menu-card-footer">
-                  <span className="chip">{item.isFeatured ? "Featured" : "Menu"}</span>
-                  <span className="stack-item-meta">{item.notes}</span>
+                <div className="detail-note">
+                  <strong>Update live menu controls</strong>
+                  Save only what is true for the current drop so the dashboard matches the real operational plan.
                 </div>
-              </article>
-            ))}
-          </div>
+                <div className="detail-actions">
+                  <button className="ghost-button" onClick={() => goTo("inventory")} type="button">
+                    Open Inventory
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </aside>
         </div>
       </section>
     );
   }
 
   function renderCustomers() {
+    const reminderDraftBody = [
+      "You asked to hear about the next MoGrillz drop.",
+      "",
+      "We will send the next menu reveal and reminder before the drop opens.",
+      "",
+      "Reply here if you have any larger-order questions for the upcoming drop.",
+      "",
+      "Chef Mo",
+      "MoGrillz",
+    ].join("\n");
+
+    async function handleCopyReminderEmails() {
+      if (!activeReminderEmails.length) return;
+
+      const text = activeReminderEmails.join(", ");
+
+      try {
+        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else if (typeof document !== "undefined") {
+          const textarea = document.createElement("textarea");
+          textarea.value = text;
+          textarea.setAttribute("readonly", "true");
+          textarea.style.position = "absolute";
+          textarea.style.left = "-9999px";
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand("copy");
+          textarea.remove();
+        }
+
+        setReminderActionMessage(`Copied ${activeReminderEmails.length} active reminder email${activeReminderEmails.length === 1 ? "" : "s"}.`);
+      } catch {
+        setReminderActionMessage("Could not copy reminder emails on this device.");
+      }
+    }
+
+    function handleOpenReminderDraft() {
+      if (!activeReminderEmails.length || typeof window === "undefined") return;
+
+      const mailto = new URL("mailto:");
+      mailto.searchParams.set("bcc", activeReminderEmails.join(","));
+      mailto.searchParams.set("subject", "MoGrillz Next Drop Reminder");
+      mailto.searchParams.set("body", reminderDraftBody);
+      window.location.href = mailto.toString();
+      setReminderActionMessage(`Opened a draft for ${activeReminderEmails.length} active reminder email${activeReminderEmails.length === 1 ? "" : "s"}.`);
+    }
+
     return (
       <section className="view-panel active">
-        <div className="card">
-          <div className="card-head">
-            <div>
-              <p className="card-kicker">Customers</p>
-              <h2 className="card-title">Repeat behavior and trust signals</h2>
+        <div className="analytics-grid">
+          <div className="card">
+            <div className="card-head">
+              <div>
+                <p className="card-kicker">Customers</p>
+                <h2 className="card-title">Repeat behavior and trust signals</h2>
+              </div>
+              <div className="status-badge">{snapshot.customers.length} tracked</div>
             </div>
-            <button className="ghost-button" type="button">Export contacts</button>
-          </div>
-          <div className="customer-grid">
-            {snapshot.customers.map((customer) => (
-              <article
-                className={`customer-card ${customer.id === selectedCustomerId ? "is-selected" : ""}`}
-                key={customer.id}
-                onClick={() => setSelectedCustomerId(customer.id)}
-              >
-                <div className="customer-card-meta">
-                  <div>
-                    <div className="customer-card-title">{customer.name}</div>
-                    <div className="stack-item-meta">{customer.zone} · {customer.totalOrders} orders</div>
+            <div className="customer-grid">
+              {snapshot.customers.map((customer) => (
+                <article
+                  className={`customer-card ${customer.id === selectedCustomerId ? "is-selected" : ""}`}
+                  key={customer.id}
+                  onClick={() => setSelectedCustomerId(customer.id)}
+                >
+                  <div className="customer-card-meta">
+                    <div>
+                      <div className="customer-card-title">{customer.name}</div>
+                      <div className="stack-item-meta">{customer.zone} · {customer.totalOrders} orders</div>
+                    </div>
+                    <span className={`status-pill ${statusTone(customer.loyaltyTier)}`}>{customer.loyaltyTier}</span>
                   </div>
-                  <span className={`status-pill ${statusTone(customer.loyaltyTier)}`}>{customer.loyaltyTier}</span>
-                </div>
-                <div className="customer-card-copy">{customer.notes ?? "No customer notes yet."}</div>
-                <div className="customer-card-footer">
-                  <span className="chip">{formatCurrency(customer.lifetimeValueCents)} lifetime</span>
-                  <button className="ghost-button" onClick={() => goTo("orders")} type="button">Open orders</button>
-                </div>
-              </article>
-            ))}
+                  <div className="customer-card-copy">{customer.notes ?? "No customer notes yet."}</div>
+                  <div className="customer-card-footer">
+                    <span className="chip">{formatCurrency(customer.lifetimeValueCents)} lifetime</span>
+                    <button className="ghost-button" onClick={() => goTo("orders")} type="button">Open orders view</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head">
+              <div>
+                <p className="card-kicker">Drop Reminders</p>
+                <h2 className="card-title">Captured next-drop demand</h2>
+              </div>
+              <div className="status-badge">{reminderSummary.activeCount} active</div>
+            </div>
+            <div className="customer-card-footer" style={{ marginTop: 0, marginBottom: 16 }}>
+              <span className="chip">{reminderSummary.recentCount} requested this week</span>
+              <span className="chip">{snapshot.dropReminders.length} total signups</span>
+            </div>
+            <div className="detail-actions" style={{ marginBottom: 16 }}>
+              <button
+                className="ghost-button"
+                disabled={!activeReminderEmails.length}
+                onClick={handleCopyReminderEmails}
+                type="button"
+              >
+                Copy active emails
+              </button>
+              <button
+                className="ghost-button"
+                disabled={!activeReminderEmails.length}
+                onClick={handleOpenReminderDraft}
+                type="button"
+              >
+                Open outreach draft
+              </button>
+            </div>
+            {reminderActionMessage ? (
+              <div className="detail-note" style={{ marginBottom: 16 }}>
+                <strong>Reminder action</strong>
+                {reminderActionMessage}
+              </div>
+            ) : null}
+            {reminderSummary.reminders.length ? (
+              <div className="customer-grid">
+                {reminderSummary.reminders.map((reminder) => (
+                  <article className="customer-card" key={reminder.id}>
+                    <div className="customer-card-meta">
+                      <div>
+                        <div className="customer-card-title">{reminder.email}</div>
+                        <div className="stack-item-meta">{formatReminderSource(reminder) || "Website signup"}</div>
+                      </div>
+                      <span className={`status-pill ${statusTone(reminder.status)}`}>{reminder.status}</span>
+                    </div>
+                    <div className="customer-card-copy">{reminder.notes ?? "No internal note recorded for this signup yet."}</div>
+                    <div className="customer-card-footer">
+                      <span className="chip">{new Date(reminder.lastRequestedAt).toLocaleString()}</span>
+                      <a className="ghost-button" href={`mailto:${reminder.email}`} onClick={(event) => event.stopPropagation()}>
+                        Email contact
+                      </a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="detail-note">
+                <strong>No reminder signups yet.</strong>
+                The success-page email capture is live, so new signups will land here as customers opt in after checkout.
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -822,14 +1137,38 @@ export function DashboardApp({
             </button>
           </div>
         </header>
-
-        {view === "overview" && renderOverview()}
-        {view === "orders" && renderOrders()}
-        {view === "inventory" && renderInventory()}
-        {view === "menu" && renderMenu()}
-        {view === "customers" && renderCustomers()}
-        {view === "analytics" && renderAnalytics()}
-        {view === "ai" && renderAi()}
+        {dataIssue && !initialSnapshot ? (
+          <section className="view-panel active">
+            <article className="card">
+              <div className="card-head">
+                <div>
+                  <p className="card-kicker">Data Health</p>
+                  <h2 className="card-title">Supabase data unavailable</h2>
+                </div>
+                <div className="status-badge">Connection issue</div>
+              </div>
+              <div className="detail-note">
+                <strong>Live dashboard data could not be loaded.</strong>
+                {dataIssue}
+              </div>
+              <div className="detail-actions">
+                <button className="ghost-button" onClick={() => router.refresh()} type="button">
+                  Retry load
+                </button>
+              </div>
+            </article>
+          </section>
+        ) : (
+          <>
+            {view === "overview" && renderOverview()}
+            {view === "orders" && renderOrders()}
+            {view === "inventory" && renderInventory()}
+            {view === "menu" && renderMenu()}
+            {view === "customers" && renderCustomers()}
+            {view === "analytics" && renderAnalytics()}
+            {view === "ai" && renderAi()}
+          </>
+        )}
       </main>
     </div>
   );

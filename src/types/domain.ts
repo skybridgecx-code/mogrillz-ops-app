@@ -40,6 +40,11 @@ export interface Order {
   items: OrderItem[];
 }
 
+export interface InventoryLinkedMenuItem {
+  id: string;
+  name: string;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -49,6 +54,7 @@ export interface InventoryItem {
   status: InventoryStatus;
   lastUpdatedAt: string;
   notes: string | null;
+  linkedMenuItems: InventoryLinkedMenuItem[];
 }
 
 export interface MenuItem {
@@ -73,6 +79,18 @@ export interface Customer {
   loyaltyTier: "Early" | "Rising" | "High" | "VIP";
   notes: string | null;
   lastOrderAt: string;
+}
+
+export interface DropReminder {
+  id: string;
+  email: string;
+  source: string;
+  signupLocation: string | null;
+  status: "Active" | "Unsubscribed";
+  notes: string | null;
+  lastRequestedAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Insight {
@@ -104,5 +122,6 @@ export interface DashboardSnapshot {
   inventory: InventoryItem[];
   menu: MenuItem[];
   customers: Customer[];
+  dropReminders: DropReminder[];
   insights: Insight[];
 }

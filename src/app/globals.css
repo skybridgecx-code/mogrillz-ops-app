@@ -700,6 +700,85 @@ button {
   color: var(--text);
 }
 
+.detail-form {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail-field {
+  display: grid;
+  gap: 8px;
+}
+
+.detail-field span {
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.detail-checkbox span {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.detail-input,
+.detail-select,
+.detail-textarea {
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  outline: none;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.detail-textarea {
+  min-height: 108px;
+  resize: vertical;
+}
+
+.detail-input:focus,
+.detail-select:focus,
+.detail-textarea:focus {
+  border-color: rgba(232, 184, 75, 0.24);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.detail-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.detail-checkbox input {
+  accent-color: var(--gold);
+}
+
+.detail-feedback {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.detail-feedback-error {
+  color: #d27a62;
+}
+
 .detail-list-item {
   display: flex;
   justify-content: space-between;
@@ -785,7 +864,7 @@ button {
 .bar-fill {
   display: block;
   height: 100%;
-  border-radius: inherit;
+  border-radius: 0 999px 999px 0;
   background: linear-gradient(90deg, rgba(232, 184, 75, 1), rgba(240, 197, 107, 0.52));
 }
 
@@ -801,6 +880,12 @@ button {
   margin-top: 10px;
   font-size: 12px;
   color: var(--muted);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
 }
 
 @keyframes fadeIn {
@@ -863,6 +948,10 @@ button {
   }
 
   .detail-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-form-grid {
     grid-template-columns: 1fr;
   }
 }

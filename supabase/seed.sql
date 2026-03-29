@@ -11,11 +11,19 @@ on conflict (id) do nothing;
 
 insert into menu_items (id, slug, name, category, price_cents, availability, allocation_limit, description, is_featured, notes)
 values
-  ('aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'nihari-tacos', 'Nihari Tacos', 'signature', 1800, 'live', 86, 'Slow-braised nihari beef with herb chutney and pickled onion.', true, 'Keep featured. Strongest first-order hook.'),
-  ('aaaaaaa2-aaaa-aaaa-aaaa-aaaaaaaaaaa2', 'lamb-sliders', 'Lamb Sliders', 'premium special', 1800, 'live', 63, 'Spiced lamb patties with toum and pickled onion on soft buns.', true, 'Profitable and premium. Great for limited quantity messaging.'),
-  ('aaaaaaa3-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 'lamb-bowl', 'Lamb Bowl', 'build your bowl', 1700, 'live', 71, 'Lamb over basmati rice or greens with bowl toppings and sauces.', true, 'Strong upsell with families and office orders.'),
-  ('aaaaaaa4-aaaa-aaaa-aaaa-aaaaaaaaaaa4', 'karachi-hot-wings', 'Karachi Hot Wings', 'wings', 1500, 'live', 78, 'Bold heat with Karachi-style masala and a crisp finish.', false, 'Reliable repeat-order item in Herndon and Sterling.'),
-  ('aaaaaaa5-aaaa-aaaa-aaaa-aaaaaaaaaaa5', 'bihari-roll', 'Bihari Roll', 'rolls', 1600, 'watch', 34, 'Bihari-style beef wrapped in paratha with chutney and onion.', false, 'Protein coverage is tighter. Keep flexible for the next drop.')
+  ('aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'nihari-tacos', 'Nihari Tacos', 'signature', 1800, 'live', 86, 'Slow-braised nihari beef, pickled onion, herb chutney.', true, 'Keep featured. Strongest first-order hook.'),
+  ('aaaaaaa2-aaaa-aaaa-aaaa-aaaaaaaaaaa2', 'lamb-sliders', 'Lamb Sliders', 'signature', 1800, 'live', 63, 'Spiced lamb patties, garlic toum, pickled red onion.', true, 'Profitable and premium. Great for limited quantity messaging.'),
+  ('aaaaaaa3-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 'wings-karachi-6', 'Karachi Hot Wings (6pc)', 'wings', 1500, 'live', 78, 'Bold heat with Karachi-style masala and a crisp finish.', false, null),
+  ('aaaaaaa4-aaaa-aaaa-aaaa-aaaaaaaaaaa4', 'wings-karachi-12', 'Karachi Hot Wings (12pc)', 'wings', 2600, 'live', 78, 'Bold heat with Karachi-style masala and a crisp finish.', false, null),
+  ('aaaaaaa5-aaaa-aaaa-aaaa-aaaaaaaaaaa5', 'wings-honey-6', 'Honey Garlic Lahori Wings (6pc)', 'wings', 1500, 'live', 78, 'Sweet heat with a Lahori-style garlic finish.', false, null),
+  ('aaaaaaa6-aaaa-aaaa-aaaa-aaaaaaaaaaa6', 'wings-honey-12', 'Honey Garlic Lahori Wings (12pc)', 'wings', 2600, 'live', 78, 'Sweet heat with a Lahori-style garlic finish.', false, null),
+  ('aaaaaaa7-aaaa-aaaa-aaaa-aaaaaaaaaaa7', 'wings-buffalo-6', 'Buffalo Masala Wings (6pc)', 'wings', 1500, 'live', 78, 'Buffalo-style wings with a masala edge.', false, null),
+  ('aaaaaaa8-aaaa-aaaa-aaaa-aaaaaaaaaaa8', 'wings-buffalo-12', 'Buffalo Masala Wings (12pc)', 'wings', 2600, 'live', 78, 'Buffalo-style wings with a masala edge.', false, null),
+  ('aaaaaaa9-aaaa-aaaa-aaaa-aaaaaaaaaaa9', 'seekh-roll', 'Seekh Kabob Roll', 'rolls', 1400, 'live', 34, 'Seekh kabob wrapped in paratha with chutney and onion.', false, null),
+  ('aaaaaaab-aaaa-aaaa-aaaa-aaaaaaaaaaab', 'bihari-roll', 'Bihari Roll', 'rolls', 1400, 'live', 34, 'Bihari-style beef wrapped in paratha with chutney and onion.', false, 'Keep flexible for the next drop.'),
+  ('aaaaaaac-aaaa-aaaa-aaaa-aaaaaaaaaaac', 'chicken-shawarma', 'Chicken Shawarma Roll', 'rolls', 1400, 'live', 34, 'Chicken shawarma wrapped in paratha with sauces and crunch.', false, null),
+  ('aaaaaaad-aaaa-aaaa-aaaa-aaaaaaaaaaad', 'bowl-lamb', 'Lamb Bowl', 'bowls', 1700, 'live', 71, 'Tender lamb over basmati rice or greens with raita, green chutney, and your choice of bowl toppings.', false, 'Strong upsell with families and office orders.'),
+  ('aaaaaaae-aaaa-aaaa-aaaa-aaaaaaaaaaae', 'bowl-chicken', 'Chicken Bowl', 'bowls', 1500, 'live', 71, 'Marinated chicken over basmati rice or greens with raita, green chutney, and your choice of bowl toppings.', false, null)
 on conflict (id) do nothing;
 
 insert into inventory_items (id, name, unit, on_hand_qty, par_level, status, location, reorder_threshold, notes)
@@ -29,21 +37,41 @@ values
   ('bbbbbbb7-bbbb-bbbb-bbbb-bbbbbbbbbbb7', 'Garlic Toum', 'pans', 1.5, 1, 'watch', 'cold hold', 1, 'Used heavily by slider orders.')
 on conflict (id) do nothing;
 
+insert into inventory_item_menu_links (inventory_item_id, menu_item_id)
+values
+  ('bbbbbbb1-bbbb-bbbb-bbbb-bbbbbbbbbbb1', 'aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
+  ('bbbbbbb2-bbbb-bbbb-bbbb-bbbbbbbbbbb2', 'aaaaaaa2-aaaa-aaaa-aaaa-aaaaaaaaaaa2'),
+  ('bbbbbbb2-bbbb-bbbb-bbbb-bbbbbbbbbbb2', 'aaaaaaad-aaaa-aaaa-aaaa-aaaaaaaaaaad'),
+  ('bbbbbbb3-bbbb-bbbb-bbbb-bbbbbbbbbbb3', 'aaaaaaac-aaaa-aaaa-aaaa-aaaaaaaaaaac'),
+  ('bbbbbbb3-bbbb-bbbb-bbbb-bbbbbbbbbbb3', 'aaaaaaae-aaaa-aaaa-aaaa-aaaaaaaaaaae'),
+  ('bbbbbbb4-bbbb-bbbb-bbbb-bbbbbbbbbbb4', 'aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
+  ('bbbbbbb4-bbbb-bbbb-bbbb-bbbbbbbbbbb4', 'aaaaaaa2-aaaa-aaaa-aaaa-aaaaaaaaaaa2'),
+  ('bbbbbbb4-bbbb-bbbb-bbbb-bbbbbbbbbbb4', 'aaaaaaa9-aaaa-aaaa-aaaa-aaaaaaaaaaa9'),
+  ('bbbbbbb4-bbbb-bbbb-bbbb-bbbbbbbbbbb4', 'aaaaaaab-aaaa-aaaa-aaaa-aaaaaaaaaaab'),
+  ('bbbbbbb4-bbbb-bbbb-bbbb-bbbbbbbbbbb4', 'aaaaaaad-aaaa-aaaa-aaaa-aaaaaaaaaaad'),
+  ('bbbbbbb4-bbbb-bbbb-bbbb-bbbbbbbbbbb4', 'aaaaaaae-aaaa-aaaa-aaaa-aaaaaaaaaaae'),
+  ('bbbbbbb5-bbbb-bbbb-bbbb-bbbbbbbbbbb5', 'aaaaaaad-aaaa-aaaa-aaaa-aaaaaaaaaaad'),
+  ('bbbbbbb5-bbbb-bbbb-bbbb-bbbbbbbbbbb5', 'aaaaaaae-aaaa-aaaa-aaaa-aaaaaaaaaaae'),
+  ('bbbbbbb6-bbbb-bbbb-bbbb-bbbbbbbbbbb6', 'aaaaaaad-aaaa-aaaa-aaaa-aaaaaaaaaaad'),
+  ('bbbbbbb6-bbbb-bbbb-bbbb-bbbbbbbbbbb6', 'aaaaaaae-aaaa-aaaa-aaaa-aaaaaaaaaaae'),
+  ('bbbbbbb7-bbbb-bbbb-bbbb-bbbbbbbbbbb7', 'aaaaaaa2-aaaa-aaaa-aaaa-aaaaaaaaaaa2')
+on conflict do nothing;
+
 insert into orders (id, order_number, customer_id, customer_name, customer_email, status, drop_day, delivery_window, zone, total_cents, custom_request, delivery_notes, payment_provider, payment_status)
 values
-  ('c1111111-1111-1111-1111-111111111111', 'MG-1051', '11111111-1111-1111-1111-111111111111', 'Ayesha Khan', 'ayesha@example.com', 'ready', 'Wednesday', '6:30 PM - 7:00 PM', 'Herndon', 5400, 'No utensils please. Call on arrival.', 'Leave at the side door after text.', 'Stripe', 'paid'),
-  ('c2222222-2222-2222-2222-222222222222', 'MG-1052', '22222222-2222-2222-2222-222222222222', 'Hamza Ali', 'hamza@example.com', 'in prep', 'Wednesday', '7:00 PM - 7:30 PM', 'Sterling', 3200, 'Please text instead of calling.', 'Hand off at front desk if needed.', 'Stripe', 'paid'),
-  ('c3333333-3333-3333-3333-333333333333', 'MG-1053', '33333333-3333-3333-3333-333333333333', 'Fatima Noor', 'fatima@example.com', 'delivered', 'Friday', '5:45 PM - 6:15 PM', 'Vienna', 4100, 'Leave at the front desk.', 'Delivered to reception with signature note.', 'Stripe', 'paid'),
-  ('c4444444-4444-4444-4444-444444444444', 'MG-1054', '44444444-4444-4444-4444-444444444444', 'Omar Siddiqui', 'omar@example.com', 'new', 'Friday', '7:30 PM - 8:00 PM', 'Fairfax', 2700, 'Ring the bell once.', 'Customer requested mild spice on the roll.', 'Stripe', 'paid')
+  ('c1111111-1111-1111-1111-111111111111', 'MG-1051', '11111111-1111-1111-1111-111111111111', 'Ayesha Khan', 'ayesha@example.com', 'Ready', 'Wednesday', '6:30 PM - 7:00 PM', 'Herndon', 5512, 'No utensils please. Call on arrival.', 'Leave at the side door after text.', 'Stripe', 'paid'),
+  ('c2222222-2222-2222-2222-222222222222', 'MG-1052', '22222222-2222-2222-2222-222222222222', 'Hamza Ali', 'hamza@example.com', 'In Prep', 'Wednesday', '7:00 PM - 7:30 PM', 'Sterling', 3120, 'Please text instead of calling.', 'Hand off at front desk if needed.', 'Stripe', 'paid'),
+  ('c3333333-3333-3333-3333-333333333333', 'MG-1053', '33333333-3333-3333-3333-333333333333', 'Fatima Noor', 'fatima@example.com', 'Delivered', 'Friday', '5:45 PM - 6:15 PM', 'Vienna', 1456, 'Leave at the front desk.', 'Delivered to reception with signature note.', 'Stripe', 'paid'),
+  ('c4444444-4444-4444-4444-444444444444', 'MG-1054', '44444444-4444-4444-4444-444444444444', 'Omar Siddiqui', 'omar@example.com', 'New', 'Friday', '7:30 PM - 8:00 PM', 'Fairfax', 3744, 'Ring the bell once.', 'Customer requested mild spice on the roll.', 'Stripe', 'paid')
 on conflict (id) do nothing;
 
 insert into order_items (order_id, menu_item_id, name, quantity, unit_price_cents, customizations, notes)
 values
   ('c1111111-1111-1111-1111-111111111111', 'aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Nihari Tacos', 2, 1800, '["extra green chutney"]'::jsonb, 'Signature item'),
-  ('c1111111-1111-1111-1111-111111111111', 'aaaaaaa3-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 'Lamb Bowl', 1, 1700, '["cilantro","cheese","no onions"]'::jsonb, 'Bowl customization'),
-  ('c2222222-2222-2222-2222-222222222222', 'aaaaaaa4-aaaa-aaaa-aaaa-aaaaaaaaaaa4', 'Karachi Hot Wings', 1, 1500, '["extra ranch"]'::jsonb, 'Sauce on the side'),
-  ('c2222222-2222-2222-2222-222222222222', 'aaaaaaa3-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 'Chicken Bowl', 1, 1700, '["light rice","extra cucumbers"]'::jsonb, 'Medium bowl'),
-  ('c3333333-3333-3333-3333-333333333333', 'aaaaaaa5-aaaa-aaaa-aaaa-aaaaaaaaaaa5', 'Bihari Roll', 1, 1600, '["normal spice"]'::jsonb, 'Delivered order'),
+  ('c1111111-1111-1111-1111-111111111111', 'aaaaaaad-aaaa-aaaa-aaaa-aaaaaaaaaaad', 'Lamb Bowl', 1, 1700, '["cilantro","cheese","no onions"]'::jsonb, 'Bowl customization'),
+  ('c2222222-2222-2222-2222-222222222222', 'aaaaaaa3-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 'Karachi Hot Wings (6pc)', 1, 1500, '["extra ranch"]'::jsonb, 'Sauce on the side'),
+  ('c2222222-2222-2222-2222-222222222222', 'aaaaaaae-aaaa-aaaa-aaaa-aaaaaaaaaaae', 'Chicken Bowl', 1, 1500, '["light rice","extra cucumbers"]'::jsonb, 'Medium bowl'),
+  ('c3333333-3333-3333-3333-333333333333', 'aaaaaaab-aaaa-aaaa-aaaa-aaaaaaaaaaab', 'Bihari Roll', 1, 1400, '["normal spice"]'::jsonb, 'Delivered order'),
   ('c4444444-4444-4444-4444-444444444444', 'aaaaaaa2-aaaa-aaaa-aaaa-aaaaaaaaaaa2', 'Lamb Sliders', 2, 1800, '["one no onions"]'::jsonb, 'Office order')
 on conflict do nothing;
 

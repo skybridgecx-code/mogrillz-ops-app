@@ -6,6 +6,25 @@ const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   Ready: "Delivered",
 };
 
+export function normalizeOrderStatus(value: unknown): OrderStatus | null {
+  if (typeof value !== "string") return null;
+
+  switch (value.trim().toLowerCase().replace(/[_-]+/g, " ")) {
+    case "new":
+      return "New";
+    case "in prep":
+      return "In Prep";
+    case "ready":
+      return "Ready";
+    case "delivered":
+      return "Delivered";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return null;
+  }
+}
+
 export function getNextOrderStatus(status: OrderStatus): OrderStatus | null {
   return NEXT_ORDER_STATUS[status] ?? null;
 }

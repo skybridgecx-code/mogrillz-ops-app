@@ -40,6 +40,18 @@ create table if not exists customers (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists drop_reminders (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  source text not null default 'website',
+  signup_location text,
+  status text not null default 'active' check (status in ('active', 'unsubscribed')),
+  notes text,
+  last_requested_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists menu_items (
   id uuid primary key default gen_random_uuid(),
   slug text not null unique,
@@ -68,6 +80,13 @@ create table if not exists inventory_items (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists inventory_item_menu_links (
+  inventory_item_id uuid not null references inventory_items(id) on delete cascade,
+  menu_item_id uuid not null references menu_items(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (inventory_item_id, menu_item_id)
+);
+
 create table if not exists orders (
   id uuid primary key default gen_random_uuid(),
   order_number text not null unique,
@@ -81,12 +100,15 @@ create table if not exists orders (
   zone text not null,
   total_cents integer not null default 0,
   custom_request text,
+  operator_note text,
   delivery_notes text,
   payment_provider text not null default 'Stripe',
   payment_status text not null default 'unpaid',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table orders add column if not exists operator_note text;
 
 create table if not exists order_items (
   id uuid primary key default gen_random_uuid(),
@@ -119,6 +141,9 @@ create index if not exists idx_orders_customer_id on orders (customer_id);
 create index if not exists idx_order_items_order_id on order_items (order_id);
 create index if not exists idx_order_items_menu_item_id on order_items (menu_item_id);
 create index if not exists idx_inventory_status_name on inventory_items (status, name);
+create index if not exists idx_inventory_item_menu_links_inventory_item_id on inventory_item_menu_links (inventory_item_id);
+create index if not exists idx_inventory_item_menu_links_menu_item_id on inventory_item_menu_links (menu_item_id);
+create index if not exists idx_drop_reminders_status_created_at on drop_reminders (status, created_at desc);
 create index if not exists idx_menu_items_category_availability on menu_items (category, availability);
 create index if not exists idx_customers_zone_tier on customers (zone, loyalty_tier);
 create index if not exists idx_insights_type_active on insights (type, is_active, created_at desc);
@@ -134,6 +159,11 @@ for each row execute function set_updated_at();
 drop trigger if exists trg_customers_updated_at on customers;
 create trigger trg_customers_updated_at
 before update on customers
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_drop_reminders_updated_at on drop_reminders;
+create trigger trg_drop_reminders_updated_at
+before update on drop_reminders
 for each row execute function set_updated_at();
 
 drop trigger if exists trg_menu_items_updated_at on menu_items;
@@ -175,16 +205,20 @@ grant usage on schema public to authenticated;
 grant execute on function is_admin_user() to authenticated;
 grant select, insert, update, delete on admin_memberships to authenticated;
 grant select, insert, update, delete on customers to authenticated;
+grant select, insert, update, delete on drop_reminders to authenticated;
 grant select, insert, update, delete on menu_items to authenticated;
 grant select, insert, update, delete on inventory_items to authenticated;
+grant select, insert, update, delete on inventory_item_menu_links to authenticated;
 grant select, insert, update, delete on orders to authenticated;
 grant select, insert, update, delete on order_items to authenticated;
 grant select, insert, update, delete on insights to authenticated;
 
 alter table admin_memberships enable row level security;
 alter table customers enable row level security;
+alter table drop_reminders enable row level security;
 alter table menu_items enable row level security;
 alter table inventory_items enable row level security;
+alter table inventory_item_menu_links enable row level security;
 alter table orders enable row level security;
 alter table order_items enable row level security;
 alter table insights enable row level security;
@@ -247,6 +281,35 @@ for delete
 to authenticated
 using (public.is_admin_user());
 
+drop policy if exists "drop_reminders_select" on drop_reminders;
+create policy "drop_reminders_select"
+on drop_reminders
+for select
+to authenticated
+using (public.is_admin_user());
+
+drop policy if exists "drop_reminders_insert" on drop_reminders;
+create policy "drop_reminders_insert"
+on drop_reminders
+for insert
+to authenticated
+with check (public.is_admin_user());
+
+drop policy if exists "drop_reminders_update" on drop_reminders;
+create policy "drop_reminders_update"
+on drop_reminders
+for update
+to authenticated
+using (public.is_admin_user())
+with check (public.is_admin_user());
+
+drop policy if exists "drop_reminders_delete" on drop_reminders;
+create policy "drop_reminders_delete"
+on drop_reminders
+for delete
+to authenticated
+using (public.is_admin_user());
+
 drop policy if exists "menu_items_select" on menu_items;
 create policy "menu_items_select"
 on menu_items
@@ -301,6 +364,35 @@ with check (public.is_admin_user());
 drop policy if exists "inventory_items_delete" on inventory_items;
 create policy "inventory_items_delete"
 on inventory_items
+for delete
+to authenticated
+using (public.is_admin_user());
+
+drop policy if exists "inventory_item_menu_links_select" on inventory_item_menu_links;
+create policy "inventory_item_menu_links_select"
+on inventory_item_menu_links
+for select
+to authenticated
+using (public.is_admin_user());
+
+drop policy if exists "inventory_item_menu_links_insert" on inventory_item_menu_links;
+create policy "inventory_item_menu_links_insert"
+on inventory_item_menu_links
+for insert
+to authenticated
+with check (public.is_admin_user());
+
+drop policy if exists "inventory_item_menu_links_update" on inventory_item_menu_links;
+create policy "inventory_item_menu_links_update"
+on inventory_item_menu_links
+for update
+to authenticated
+using (public.is_admin_user())
+with check (public.is_admin_user());
+
+drop policy if exists "inventory_item_menu_links_delete" on inventory_item_menu_links;
+create policy "inventory_item_menu_links_delete"
+on inventory_item_menu_links
 for delete
 to authenticated
 using (public.is_admin_user());
