@@ -1,13 +1,13 @@
 # MoGrillz Ops
 
-MoGrillz Ops is the private admin app for the MoGrillz drop-food business. It opens to an overview-first dashboard and can expand into orders, inventory, menu controls, customers, analytics, and AI insights.
+MoGrillz Ops is the private admin app for the MoGrillz always-open, pickup-first business. It opens to an operations-first dashboard and expands into orders, inventory, menu controls, customers, analytics, and AI insights.
 
 ## Setup
 
 1. Create a Supabase project.
-2. Run [`supabase/schema.sql`](/Users/muhammadaatif/Desktop/untitled%20folder%203/mogrillz-ops-app/supabase/schema.sql) in the Supabase SQL editor.
-3. Run [`supabase/seed.sql`](/Users/muhammadaatif/Desktop/untitled%20folder%203/mogrillz-ops-app/supabase/seed.sql) if you want the starter demo data.
-4. Copy [`.env.example`](/Users/muhammadaatif/Desktop/untitled%20folder%203/mogrillz-ops-app/.env.example) to `.env.local` for local work, then set these values:
+2. Run `supabase/schema.sql` in the Supabase SQL editor.
+3. Run `supabase/seed.sql` if you want the starter demo data.
+4. Copy `.env.example` to `.env.local` for local work, then set these values:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=...

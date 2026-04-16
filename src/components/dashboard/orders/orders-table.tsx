@@ -50,7 +50,7 @@ export function OrdersTable({
               <td>{order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}</td>
               <td>
                 <div>{order.fulfillmentMethod === "pickup" ? "Pickup" : "Delivery"}</div>
-                <span className="row-subtle">{order.deliveryWindow}</span>
+                <span className="row-subtle">{order.serviceWindow}</span>
               </td>
               <td><span className={`status-pill ${statusTone(order.status)}`}>{order.status}</span></td>
               <td>{formatCurrency(order.totalCents)}</td>

@@ -12,16 +12,21 @@ function readEnv() {
   return { url, publishableKey };
 }
 
+function isMockModeEnabled() {
+  const raw = process.env.NEXT_PUBLIC_USE_MOCK_DATA?.trim().toLowerCase();
+  return raw === "true" || raw === "1";
+}
+
 export async function updateSession(request: NextRequest) {
   const env = readEnv();
   const pathname = request.nextUrl.pathname;
-  const canBypassForMockMode = !env && process.env.NEXT_PUBLIC_USE_MOCK_DATA !== "false";
+  const mockModeEnabled = isMockModeEnabled();
 
   if (!env) {
-    if (!canBypassForMockMode && pathname !== "/login") {
+    if (!mockModeEnabled && pathname !== "/unauthorized") {
       const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/login";
-      redirectUrl.searchParams.set("next", pathname);
+      redirectUrl.pathname = "/unauthorized";
+      redirectUrl.searchParams.set("reason", "missing_auth_config");
 
       return NextResponse.redirect(redirectUrl);
     }

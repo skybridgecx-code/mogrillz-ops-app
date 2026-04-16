@@ -80,8 +80,8 @@ export function OrderDetailCard({
             <h3>{selectedOrder.status}</h3>
             <p>
               {selectedOrder.fulfillmentMethod === "pickup"
-                ? `Pickup. ${selectedOrder.deliveryWindow}. Total ${formatCurrency(selectedOrder.totalCents)}.`
-                : `Delivery. ${selectedOrder.deliveryWindow}. Zone: ${selectedOrder.customerZone}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
+                ? `Pickup. ${selectedOrder.serviceWindow}. Total ${formatCurrency(selectedOrder.totalCents)}.`
+                : `Delivery. ${selectedOrder.serviceWindow}. Zone: ${selectedOrder.customerZone}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
             </p>
           </div>
           <div className="detail-note">

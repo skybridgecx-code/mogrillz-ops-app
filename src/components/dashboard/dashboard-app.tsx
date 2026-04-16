@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+
 import { FulfillmentAnalyticsCards } from "@/components/dashboard/analytics/fulfillment-analytics-cards";
 import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
 import { FulfillmentSummaryCards } from "@/components/dashboard/overview/fulfillment-summary-cards";
@@ -9,58 +10,82 @@ import { OverviewKpiGrid } from "@/components/dashboard/overview/overview-kpi-gr
 import { getFulfillmentSummary } from "@/lib/dashboard/fulfillment-summary";
 import { getNextOrderStatus } from "@/lib/dashboard/order-status";
 import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orders/order-filters";
-
-import type {
-  DashboardSnapshot,
-  DropReminder,
-  InventoryItem,
-  MenuItem,
-  Order,
-} from "@/types/domain";
+import type { DashboardSnapshot, EmailUpdate, InventoryItem, MenuItem, Order } from "@/types/domain";
 
 type DataSourceKind = "mock" | "supabase";
 type ViewKey = "overview" | "orders" | "inventory" | "menu" | "customers" | "analytics" | "ai";
 
+type MenuEditorState = {
+  slug: string;
+  name: string;
+  category: string;
+  priceCents: string;
+  availability: MenuItem["availability"];
+  allocationLimit: string;
+  description: string;
+  imageUrl: string;
+  sortOrder: string;
+  isFeatured: boolean;
+  notes: string;
+};
+
 const sectionMeta: Record<ViewKey, { title: string; copy: string }> = {
   overview: {
     title: "Overview",
-    copy: "A single view of drops, orders, inventory pressure, menu health, and AI guidance.",
+    copy: "Open-order operations, menu health, stock pressure, and the next operator move.",
   },
   orders: {
     title: "Orders",
-    copy: "Live queue management, customer notes, and fulfillment timing for the current drop.",
+    copy: "Pickup queue management, customer notes, and service status updates.",
   },
   inventory: {
     title: "Inventory",
-    copy: "Ingredient coverage, stock risk, and the next restock decisions before service tightens up.",
+    copy: "Ingredient coverage, stock risk, and the prep decisions shaping service quality.",
   },
   menu: {
     title: "Menu Control",
-    copy: "Availability, item allocation, and what should stay featured for the next drop.",
+    copy: "The live customer menu now runs from here. Edit items, pricing, ordering, and visibility without code changes.",
   },
   customers: {
     title: "Customers",
-    copy: "Repeat behavior, high-value buyers, and the notes that shape better retention.",
+    copy: "Tracked customers and email update signups for retention and reactivation.",
   },
   analytics: {
     title: "Analytics",
-    copy: "Sales performance, item demand, and drop-to-drop trends across the operation.",
+    copy: "Sales mix, fulfillment signals, and what the current menu is actually doing.",
   },
   ai: {
     title: "AI Insights",
-    copy: "Demand guidance, prep suggestions, automation opportunities, and operator alerts.",
+    copy: "Prep guidance, operator warnings, and content ideas tied to the current operation.",
   },
 };
 
 const navItems: Array<{ key: ViewKey; label: string; meta: string }> = [
-  { key: "overview", label: "Overview", meta: "Everything at a glance" },
-  { key: "orders", label: "Orders", meta: "Live fulfillment flow" },
+  { key: "overview", label: "Overview", meta: "Operations snapshot" },
+  { key: "orders", label: "Orders", meta: "Live pickup queue" },
   { key: "inventory", label: "Inventory", meta: "Stock and prep control" },
-  { key: "menu", label: "Menu Control", meta: "Availability and allocation" },
-  { key: "customers", label: "Customers", meta: "Repeat behavior and notes" },
-  { key: "analytics", label: "Analytics", meta: "Revenue and trendline view" },
-  { key: "ai", label: "AI Insights", meta: "Guidance and automation" },
+  { key: "menu", label: "Menu Control", meta: "Customer-facing menu CMS" },
+  { key: "customers", label: "Customers", meta: "Accounts and email updates" },
+  { key: "analytics", label: "Analytics", meta: "Revenue and demand view" },
+  { key: "ai", label: "AI Insights", meta: "Guidance and automations" },
 ];
+
+const EMPTY_SNAPSHOT: DashboardSnapshot = {
+  generatedAt: new Date(0).toISOString(),
+  operations: {
+    serviceDateLabel: "Upcoming",
+    status: "Supabase Unavailable",
+    queueSummary: "Retry when the connection is healthy",
+    serviceWindow: "Pickup details confirmed after checkout",
+  },
+  kpis: [],
+  orders: [],
+  inventory: [],
+  menu: [],
+  customers: [],
+  emailUpdates: [],
+  insights: [],
+};
 
 function formatCurrency(cents: number) {
   return new Intl.NumberFormat("en-US", {
@@ -72,7 +97,7 @@ function formatCurrency(cents: number) {
 
 function statusTone(status: string) {
   const normalized = status.toLowerCase();
-  if (normalized.includes("delivered") || normalized.includes("ready") || normalized.includes("healthy") || normalized.includes("live") || normalized.includes("vip") || normalized.includes("active")) {
+  if (normalized.includes("picked up") || normalized.includes("ready") || normalized.includes("healthy") || normalized.includes("live") || normalized.includes("vip") || normalized.includes("active")) {
     return "success";
   }
   if (normalized.includes("prep") || normalized.includes("watch") || normalized.includes("open") || normalized.includes("rising")) {
@@ -84,29 +109,8 @@ function statusTone(status: string) {
   return "";
 }
 
-function getOrderVolumeLabel(snapshot: DashboardSnapshot) {
-  return `${snapshot.orders.length} live orders`;
-}
-
-const EMPTY_SNAPSHOT: DashboardSnapshot = {
-  generatedAt: new Date(0).toISOString(),
-  drop: {
-    day: "Monday",
-    status: "Supabase Unavailable",
-    window: "Awaiting live data",
-    cutoff: "Retry when the connection is healthy",
-  },
-  kpis: [],
-  orders: [],
-  inventory: [],
-  menu: [],
-  customers: [],
-  dropReminders: [],
-  insights: [],
-};
-
-function formatReminderSource(reminder: DropReminder) {
-  const parts = [reminder.source, reminder.signupLocation].filter(Boolean);
+function formatReminderSource(update: EmailUpdate) {
+  const parts = [update.source, update.signupLocation].filter(Boolean);
   return parts
     .map((part) => part!.replace(/[-_]+/g, " "))
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -120,14 +124,34 @@ function getInventoryImpactCopy(item: InventoryItem) {
     : "No linked menu items recorded yet.";
 
   if (item.status === "Low" || item.status === "Out") {
-    return `${linkedCopy} This item could tighten the next drop fast.`;
+    return `${linkedCopy} This ingredient can pinch the live pickup queue fast.`;
   }
 
   if (item.status === "Watch") {
     return `${linkedCopy} Coverage is workable, but there is not much slack.`;
   }
 
-  return `${linkedCopy} Coverage is healthy for the current cycle.`;
+  return `${linkedCopy} Coverage is healthy for the current service flow.`;
+}
+
+function menuToDraft(item?: MenuItem | null): MenuEditorState {
+  return {
+    slug: item?.slug ?? "",
+    name: item?.name ?? "",
+    category: item?.category ?? "",
+    priceCents: item ? String(item.priceCents) : "",
+    availability: item?.availability ?? "Live",
+    allocationLimit: item ? String(item.allocationLimit) : "0",
+    description: item?.description ?? "",
+    imageUrl: item?.imageUrl ?? "",
+    sortOrder: item ? String(item.sortOrder) : "0",
+    isFeatured: item?.isFeatured ?? false,
+    notes: item?.notes ?? "",
+  };
+}
+
+function getOrderVolumeLabel(snapshot: DashboardSnapshot) {
+  return `${snapshot.orders.length} live orders`;
 }
 
 export function DashboardApp({
@@ -139,18 +163,35 @@ export function DashboardApp({
   dataSource: DataSourceKind;
   dataIssue?: string | null;
 }) {
-  const snapshot = initialSnapshot ?? EMPTY_SNAPSHOT;
   const router = useRouter();
+  const snapshot = initialSnapshot ?? EMPTY_SNAPSHOT;
   const [view, setView] = useState<ViewKey>("overview");
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
   const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentFilter>("all");
   const [selectedOrderId, setSelectedOrderId] = useState(snapshot.orders[0]?.id ?? "");
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [statusUpdatingOrderId, setStatusUpdatingOrderId] = useState<string | null>(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState(snapshot.inventory[0]?.id ?? "");
   const [selectedMenuId, setSelectedMenuId] = useState(snapshot.menu[0]?.id ?? "");
   const [selectedCustomerId, setSelectedCustomerId] = useState(snapshot.customers[0]?.id ?? "");
-  const [reminderActionMessage, setReminderActionMessage] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusUpdatingOrderId, setStatusUpdatingOrderId] = useState<string | null>(null);
+  const [menuMessage, setMenuMessage] = useState<string | null>(null);
+  const [menuError, setMenuError] = useState<string | null>(null);
+  const [menuSaving, setMenuSaving] = useState(false);
+  const [createSaving, setCreateSaving] = useState(false);
+  const [menuDraft, setMenuDraft] = useState<MenuEditorState>(() => menuToDraft(snapshot.menu[0] ?? null));
+  const [createDraft, setCreateDraft] = useState<MenuEditorState>({
+    slug: "",
+    name: "",
+    category: "signature",
+    priceCents: "",
+    availability: "Live",
+    allocationLimit: "0",
+    description: "",
+    imageUrl: "",
+    sortOrder: "0",
+    isFeatured: false,
+    notes: "",
+  });
 
   useEffect(() => {
     const syncHash = () => {
@@ -165,13 +206,15 @@ export function DashboardApp({
     return () => window.removeEventListener("hashchange", syncHash);
   }, []);
 
-  const filteredOrders = useMemo(() => {
-    return snapshot.orders.filter((order) => {
-      const statusMatch = orderFilter === "all" || order.status.toLowerCase() === orderFilter;
-      const fulfillmentMatch = fulfillmentFilter === "all" || order.fulfillmentMethod === fulfillmentFilter;
-      return statusMatch && fulfillmentMatch;
-    });
-  }, [fulfillmentFilter, orderFilter, snapshot.orders]);
+  const filteredOrders = useMemo(
+    () =>
+      snapshot.orders.filter((order) => {
+        const statusMatch = orderFilter === "all" || order.status.toLowerCase() === orderFilter;
+        const fulfillmentMatch = fulfillmentFilter === "all" || order.fulfillmentMethod === fulfillmentFilter;
+        return statusMatch && fulfillmentMatch;
+      }),
+    [fulfillmentFilter, orderFilter, snapshot.orders],
+  );
 
   useEffect(() => {
     if (!filteredOrders.length) {
@@ -180,28 +223,25 @@ export function DashboardApp({
     }
 
     const stillVisible = filteredOrders.some((order) => order.id === selectedOrderId);
-    if (!stillVisible) setSelectedOrderId(filteredOrders[0].id);
+    if (!stillVisible) {
+      setSelectedOrderId(filteredOrders[0].id);
+    }
   }, [filteredOrders, selectedOrderId]);
 
-  useEffect(() => {
-    setStatusError(null);
-  }, [selectedOrderId]);
-
   const selectedOrder = filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? null;
-  const selectedInventory =
-    snapshot.inventory.find((item) => item.id === selectedInventoryId) ?? snapshot.inventory[0];
-  const selectedMenu = snapshot.menu.find((item) => item.id === selectedMenuId) ?? snapshot.menu[0];
+  const selectedInventory = snapshot.inventory.find((item) => item.id === selectedInventoryId) ?? snapshot.inventory[0] ?? null;
+  const selectedMenu = snapshot.menu.find((item) => item.id === selectedMenuId) ?? snapshot.menu[0] ?? null;
+  const selectedCustomer = snapshot.customers.find((item) => item.id === selectedCustomerId) ?? snapshot.customers[0] ?? null;
 
-  const pipeline = useMemo(() => {
-    const count = (status: Order["status"]) => snapshot.orders.filter((order) => order.status === status).length;
-    return [
-      { label: "New Orders", count: count("New"), copy: "Fresh checkouts and unreviewed custom requests." },
-      { label: "In Prep", count: count("In Prep"), copy: "Currently cooking, packing, or portioning." },
-      { label: "Ready", count: count("Ready"), copy: "Can move to dispatch once routing is confirmed." },
-      { label: "Delivered", count: count("Delivered"), copy: "Completed successfully in the current cycle." },
-    ];
-  }, [snapshot.orders]);
+  useEffect(() => {
+    setMenuDraft(menuToDraft(selectedMenu));
+    setMenuMessage(null);
+    setMenuError(null);
+  }, [selectedMenu]);
 
+  const orderFilters: OrderFilter[] = ["all", "new", "in prep", "ready", "picked up"];
+  const fulfillmentFilters: FulfillmentFilter[] = ["all", "delivery", "pickup"];
+  const fulfillmentSummary = useMemo(() => getFulfillmentSummary(snapshot.orders), [snapshot.orders]);
   const lowStockItems = useMemo(
     () => snapshot.inventory.filter((item) => item.status === "Low" || item.status === "Out"),
     [snapshot.inventory],
@@ -221,68 +261,16 @@ export function DashboardApp({
     return dependencies;
   }, [snapshot.inventory]);
 
-  const selectedMenuDependencies = selectedMenu
-    ? inventoryDependenciesByMenuId.get(selectedMenu.id) ?? []
-    : [];
-  const selectedMenuRiskItems = selectedMenuDependencies.filter(
-    (item) => item.status === "Low" || item.status === "Out",
-  );
+  const selectedMenuDependencies = selectedMenu ? inventoryDependenciesByMenuId.get(selectedMenu.id) ?? [] : [];
+  const selectedMenuRiskItems = selectedMenuDependencies.filter((item) => item.status === "Low" || item.status === "Out");
 
   const prepTargets = useMemo(
     () =>
-      snapshot.menu.map((item) => ({
-        title: item.name,
-        copy: item.notes ?? item.description,
-        meta: `Allocation target ${item.allocationLimit}%`,
-        tone: item.isFeatured ? "success" : item.availability === "Watch" ? "warning" : "success",
-      })),
+      [...snapshot.menu]
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+        .slice(0, 6),
     [snapshot.menu],
   );
-
-  const topCustomers = useMemo(
-    () =>
-      [...snapshot.customers]
-        .sort((a, b) => b.lifetimeValueCents - a.lifetimeValueCents)
-        .slice(0, 3),
-    [snapshot.customers],
-  );
-
-  const reminderSummary = useMemo(() => {
-    const activeCount = snapshot.dropReminders.filter((reminder) => reminder.status === "Active").length;
-    const recentCount = snapshot.dropReminders.filter((reminder) => {
-      const requestedAt = new Date(reminder.lastRequestedAt).getTime();
-      return Number.isFinite(requestedAt) && requestedAt >= Date.now() - 7 * 24 * 60 * 60 * 1000;
-    }).length;
-
-    return {
-      activeCount,
-      recentCount,
-      reminders: [...snapshot.dropReminders].sort(
-        (a, b) => new Date(b.lastRequestedAt).getTime() - new Date(a.lastRequestedAt).getTime(),
-      ),
-    };
-  }, [snapshot.dropReminders]);
-
-  const activeReminderEmails = useMemo(
-    () =>
-      reminderSummary.reminders
-        .filter((reminder) => reminder.status === "Active")
-        .map((reminder) => reminder.email)
-        .filter(Boolean),
-    [reminderSummary.reminders],
-  );
-
-  const latestInsightByType = useMemo(() => {
-    const sortedInsights = [...snapshot.insights].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-
-    return {
-      content: sortedInsights.find((insight) => insight.type === "content") ?? null,
-      demand: sortedInsights.find((insight) => insight.type === "demand") ?? null,
-      prep: sortedInsights.find((insight) => insight.type === "prep") ?? null,
-    };
-  }, [snapshot.insights]);
 
   const analyticsBars = useMemo(
     () =>
@@ -296,12 +284,30 @@ export function DashboardApp({
     [snapshot.menu],
   );
 
-  const orderFilters: OrderFilter[] = ["all", "new", "in prep", "ready", "delivered"];
-  const fulfillmentFilters: FulfillmentFilter[] = ["all", "delivery", "pickup"];
+  const emailUpdateSummary = useMemo(() => {
+    const activeCount = snapshot.emailUpdates.filter((update) => update.status === "Active").length;
+    const recentCount = snapshot.emailUpdates.filter((update) => {
+      const requestedAt = new Date(update.lastRequestedAt).getTime();
+      return Number.isFinite(requestedAt) && requestedAt >= Date.now() - 7 * 24 * 60 * 60 * 1000;
+    }).length;
 
-  const fulfillmentSummary = useMemo(() => getFulfillmentSummary(snapshot.orders), [snapshot.orders]);
+    return {
+      activeCount,
+      recentCount,
+      updates: [...snapshot.emailUpdates].sort(
+        (a, b) => new Date(b.lastRequestedAt).getTime() - new Date(a.lastRequestedAt).getTime(),
+      ),
+    };
+  }, [snapshot.emailUpdates]);
 
-  const currentSection = sectionMeta[view];
+  const activeUpdateEmails = useMemo(
+    () =>
+      emailUpdateSummary.updates
+        .filter((update) => update.status === "Active")
+        .map((update) => update.email)
+        .filter(Boolean),
+    [emailUpdateSummary.updates],
+  );
 
   function goTo(nextView: ViewKey) {
     setView(nextView);
@@ -310,9 +316,20 @@ export function DashboardApp({
     }
   }
 
+  function updateMenuDraft<K extends keyof MenuEditorState>(key: K, value: MenuEditorState[K]) {
+    setMenuDraft((current) => ({ ...current, [key]: value }));
+    if (menuError) setMenuError(null);
+    if (menuMessage) setMenuMessage(null);
+  }
+
+  function updateCreateDraft<K extends keyof MenuEditorState>(key: K, value: MenuEditorState[K]) {
+    setCreateDraft((current) => ({ ...current, [key]: value }));
+    if (menuError) setMenuError(null);
+    if (menuMessage) setMenuMessage(null);
+  }
+
   async function handleAdvanceOrderStatus(orderId: string, nextStatus: Order["status"]) {
     const currentOrder = snapshot.orders.find((order) => order.id === orderId);
-
     if (!currentOrder) {
       setStatusError("Order could not be found.");
       return;
@@ -330,9 +347,7 @@ export function DashboardApp({
     try {
       const response = await fetch(`/api/orders/${orderId}/status`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus }),
       });
 
@@ -343,34 +358,280 @@ export function DashboardApp({
 
       router.refresh();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to update the order status.";
-      setStatusError(message);
+      setStatusError(error instanceof Error ? error.message : "Unable to update the order status.");
     } finally {
       setStatusUpdatingOrderId(null);
     }
+  }
+
+  async function saveMenuItem(itemId: string) {
+    setMenuSaving(true);
+    setMenuError(null);
+    setMenuMessage(null);
+
+    try {
+      const response = await fetch(`/api/menu/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...menuDraft,
+          priceCents: Number(menuDraft.priceCents),
+          allocationLimit: Number(menuDraft.allocationLimit),
+          sortOrder: Number(menuDraft.sortOrder),
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to save menu item.");
+      }
+
+      setMenuMessage("Live menu item saved.");
+      router.refresh();
+    } catch (error) {
+      setMenuError(error instanceof Error ? error.message : "Unable to save menu item.");
+    } finally {
+      setMenuSaving(false);
+    }
+  }
+
+  async function createMenuItem() {
+    setCreateSaving(true);
+    setMenuError(null);
+    setMenuMessage(null);
+
+    try {
+      const response = await fetch("/api/menu", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...createDraft,
+          priceCents: Number(createDraft.priceCents),
+          allocationLimit: Number(createDraft.allocationLimit),
+          sortOrder: Number(createDraft.sortOrder),
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { error?: string; id?: string } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to create menu item.");
+      }
+
+      setCreateDraft({
+        slug: "",
+        name: "",
+        category: "signature",
+        priceCents: "",
+        availability: "Live",
+        allocationLimit: "0",
+        description: "",
+        imageUrl: "",
+        sortOrder: "0",
+        isFeatured: false,
+        notes: "",
+      });
+      setMenuMessage("New menu item created.");
+      if (payload?.id) setSelectedMenuId(payload.id);
+      router.refresh();
+    } catch (error) {
+      setMenuError(error instanceof Error ? error.message : "Unable to create menu item.");
+    } finally {
+      setCreateSaving(false);
+    }
+  }
+
+  async function handleCopyUpdateEmails() {
+    if (!activeUpdateEmails.length) return;
+
+    const text = activeUpdateEmails.join(", ");
+    try {
+      await navigator.clipboard.writeText(text);
+      setMenuMessage(`Copied ${activeUpdateEmails.length} active email update contacts.`);
+    } catch {
+      setMenuError("Could not copy email update contacts on this device.");
+    }
+  }
+
+  function handleOpenUpdateDraft() {
+    if (!activeUpdateEmails.length || typeof window === "undefined") return;
+
+    const body = [
+      "You asked to hear about the latest MoGrillz menu updates.",
+      "",
+      "We will send new menu highlights, service updates, and larger-order notes here.",
+      "",
+      "Reply if you need pickup timing help or want to place a larger order.",
+      "",
+      "Chef Mo",
+      "MoGrillz",
+    ].join("\n");
+
+    const mailto = new URL("mailto:");
+    mailto.searchParams.set("bcc", activeUpdateEmails.join(","));
+    mailto.searchParams.set("subject", "MoGrillz Menu Update");
+    mailto.searchParams.set("body", body);
+    window.location.href = mailto.toString();
+  }
+
+  function renderMenuForm(
+    draft: MenuEditorState,
+    onChange: <K extends keyof MenuEditorState>(key: K, value: MenuEditorState[K]) => void,
+    actionLabel: string,
+    onSubmit: () => void,
+    disabled: boolean,
+  ) {
+    return (
+      <div className="detail-panel">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: "0.9rem",
+          }}
+        >
+          <label className="detail-note">
+            <strong>Name</strong>
+            <input
+              onChange={(event) => onChange("name", event.target.value)}
+              style={inputStyle}
+              value={draft.name}
+            />
+          </label>
+          <label className="detail-note">
+            <strong>Slug</strong>
+            <input
+              onChange={(event) => onChange("slug", event.target.value)}
+              style={inputStyle}
+              value={draft.slug}
+            />
+          </label>
+          <label className="detail-note">
+            <strong>Category</strong>
+            <input
+              onChange={(event) => onChange("category", event.target.value)}
+              style={inputStyle}
+              value={draft.category}
+            />
+          </label>
+          <label className="detail-note">
+            <strong>Price (cents)</strong>
+            <input
+              inputMode="numeric"
+              onChange={(event) => onChange("priceCents", event.target.value)}
+              style={inputStyle}
+              value={draft.priceCents}
+            />
+          </label>
+          <label className="detail-note">
+            <strong>Availability</strong>
+            <select
+              onChange={(event) => onChange("availability", event.target.value as MenuItem["availability"])}
+              style={inputStyle}
+              value={draft.availability}
+            >
+              <option value="Live">Live</option>
+              <option value="Watch">Watch</option>
+              <option value="Paused">Paused</option>
+              <option value="Sold Out">Sold Out</option>
+            </select>
+          </label>
+          <label className="detail-note">
+            <strong>Sort order</strong>
+            <input
+              inputMode="numeric"
+              onChange={(event) => onChange("sortOrder", event.target.value)}
+              style={inputStyle}
+              value={draft.sortOrder}
+            />
+          </label>
+          <label className="detail-note">
+            <strong>Allocation limit</strong>
+            <input
+              inputMode="numeric"
+              onChange={(event) => onChange("allocationLimit", event.target.value)}
+              style={inputStyle}
+              value={draft.allocationLimit}
+            />
+          </label>
+          <label className="detail-note">
+            <strong>Image URL</strong>
+            <input
+              onChange={(event) => onChange("imageUrl", event.target.value)}
+              style={inputStyle}
+              value={draft.imageUrl}
+            />
+          </label>
+        </div>
+
+        <label className="detail-note">
+          <strong>Description</strong>
+          <textarea
+            onChange={(event) => onChange("description", event.target.value)}
+            style={textareaStyle}
+            value={draft.description}
+          />
+        </label>
+
+        <label className="detail-note">
+          <strong>Internal note</strong>
+          <textarea
+            onChange={(event) => onChange("notes", event.target.value)}
+            style={textareaStyle}
+            value={draft.notes}
+          />
+        </label>
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.6rem",
+            color: "rgba(255,255,255,0.82)",
+            fontSize: "0.95rem",
+          }}
+        >
+          <input
+            checked={draft.isFeatured}
+            onChange={(event) => onChange("isFeatured", event.target.checked)}
+            type="checkbox"
+          />
+          <span>Feature this item in customer-facing ordering surfaces</span>
+        </label>
+
+        <div className="detail-actions">
+          <button className="topbar-action" disabled={disabled} onClick={onSubmit} type="button">
+            {disabled ? "Saving..." : actionLabel}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   function renderOverview() {
     return (
       <section className="view-panel active">
         <OverviewKpiGrid kpis={snapshot.kpis}>
-          <FulfillmentSummaryCards
-            fulfillmentSummary={fulfillmentSummary}
-            formatCurrency={formatCurrency}
-          />
+          <FulfillmentSummaryCards fulfillmentSummary={fulfillmentSummary} formatCurrency={formatCurrency} />
         </OverviewKpiGrid>
 
         <div className="overview-grid">
           <article className="card card-span-2">
             <div className="card-head">
               <div>
-                <p className="card-kicker">Drop Control</p>
+                <p className="card-kicker">Operations</p>
                 <h2 className="card-title">Today at a glance</h2>
               </div>
-              <div className="status-badge">{snapshot.drop.day} {snapshot.drop.status}</div>
+              <div className="status-badge">
+                {snapshot.operations.serviceDateLabel} · {snapshot.operations.status}
+              </div>
             </div>
             <div className="pipeline-grid">
-              {pipeline.map((stage) => (
+              {[
+                { label: "Active Queue", count: snapshot.orders.filter((order) => order.status !== "Picked Up" && order.status !== "Cancelled").length, copy: snapshot.operations.queueSummary },
+                { label: "Pickup Window", count: snapshot.orders.filter((order) => order.fulfillmentMethod === "pickup").length, copy: snapshot.operations.serviceWindow },
+                { label: "Live Menu Items", count: snapshot.menu.filter((item) => item.availability === "Live").length, copy: "Items currently visible to customers." },
+                { label: "Email Updates", count: emailUpdateSummary.activeCount, copy: "Active subscribers for menu and service updates." },
+              ].map((stage) => (
                 <div className="pipeline-card" key={stage.label}>
                   <div className="pipeline-count">{stage.count}</div>
                   <div className="pipeline-label">{stage.label}</div>
@@ -389,10 +650,10 @@ export function DashboardApp({
             </div>
             <div className="quick-actions">
               {[
-                { title: "Open live orders", copy: "Review new tickets, notes, and ready-to-dispatch orders.", target: "orders" as const },
-                { title: "Review low stock", copy: "Jump straight into the ingredients most likely to pinch service.", target: "inventory" as const },
-                { title: "Adjust menu allocation", copy: "Rebalance item counts and protect premium items.", target: "menu" as const },
-                { title: "Read AI briefing", copy: "See prep guidance, demand shifts, and automation ideas.", target: "ai" as const },
+                { title: "Open live orders", copy: "Review new tickets, notes, and ready orders.", target: "orders" as const },
+                { title: "Review low stock", copy: "Jump into the ingredients most likely to pinch service.", target: "inventory" as const },
+                { title: "Update live menu", copy: "Adjust price, copy, order, or availability without code.", target: "menu" as const },
+                { title: "Review customers", copy: "See tracked buyers and email update signups.", target: "customers" as const },
               ].map((action) => (
                 <button className="action-card" key={action.title} onClick={() => goTo(action.target)} type="button">
                   <strong>{action.title}</strong>
@@ -430,98 +691,24 @@ export function DashboardApp({
           <article className="card">
             <div className="card-head">
               <div>
-                <p className="card-kicker">Prep Targets</p>
-                <h2 className="card-title">Next drop guidance</h2>
+                <p className="card-kicker">Featured Menu</p>
+                <h2 className="card-title">What customers see first</h2>
               </div>
-              <button className="ghost-button" onClick={() => goTo("menu")} type="button">Open menu control</button>
             </div>
             <div className="stack-list">
               {prepTargets.map((item) => (
-                <div className="stack-item" key={item.title}>
+                <div className="stack-item" key={item.id}>
                   <div className="stack-item-head">
-                    <div className="stack-item-title">{item.title}</div>
-                    <span className={`status-pill ${statusTone(item.tone)}`}>{item.meta}</span>
+                    <div className="stack-item-title">{item.name}</div>
+                    <span className={`status-pill ${statusTone(item.availability)}`}>{item.availability}</span>
                   </div>
-                  <div className="stack-item-copy">{item.copy}</div>
+                  <div className="stack-item-copy">{item.description}</div>
+                  <div className="stack-item-meta">
+                    Sort {item.sortOrder} · {formatCurrency(item.priceCents)}
+                    {item.notes ? ` · ${item.notes}` : ""}
+                  </div>
                 </div>
               ))}
-            </div>
-          </article>
-
-          <article className="card card-span-2">
-            <div className="card-head">
-              <div>
-                <p className="card-kicker">AI Briefing</p>
-                <h2 className="card-title">What needs attention</h2>
-              </div>
-              <button className="ghost-button" onClick={() => goTo("ai")} type="button">Open AI layer</button>
-            </div>
-            <div className="insight-grid">
-              {snapshot.insights.length ? (
-                snapshot.insights.map((insight) => (
-                  <article className="insight-card" key={insight.id}>
-                    <div className="insight-meta">
-                      <div className="insight-title">{insight.title}</div>
-                      <span className={`status-pill ${statusTone(insight.tone)}`}>{insight.confidence}%</span>
-                    </div>
-                    <div className="insight-copy">{insight.summary}</div>
-                    <div className="stack-item-meta">{insight.actionText}</div>
-                  </article>
-                ))
-              ) : (
-                <article className="insight-card">
-                  <div className="insight-meta">
-                    <div className="insight-title">No live AI insights</div>
-                    <span className="status-pill">Awaiting signal</span>
-                  </div>
-                  <div className="insight-copy">The dashboard will surface prep, demand, ops, and content guidance here once insight rows are available.</div>
-                  <div className="stack-item-meta">Check the insights table or refresh after new sync activity.</div>
-                </article>
-              )}
-            </div>
-          </article>
-
-          <article className="card">
-            <div className="card-head">
-              <div>
-                <p className="card-kicker">Campaign and Comms</p>
-                <h2 className="card-title">Live signal mix</h2>
-              </div>
-            </div>
-            <div className="stack-list">
-              <div className="stack-item">
-                <div className="stack-item-head">
-                  <div className="stack-item-title">Content Signal</div>
-                  <span className={`status-pill ${latestInsightByType.content ? statusTone(latestInsightByType.content.tone) : ""}`}>
-                    {latestInsightByType.content ? `${latestInsightByType.content.confidence}% confidence` : "No content signal"}
-                  </span>
-                </div>
-                <div className="stack-item-copy">
-                  {latestInsightByType.content?.summary ?? "No live content insight is available yet for campaign guidance."}
-                </div>
-              </div>
-              <div className="stack-item">
-                <div className="stack-item-head">
-                  <div className="stack-item-title">Demand Signal</div>
-                  <span className={`status-pill ${latestInsightByType.demand ? statusTone(latestInsightByType.demand.tone) : ""}`}>
-                    {latestInsightByType.demand ? `${latestInsightByType.demand.confidence}% confidence` : "No demand signal"}
-                  </span>
-                </div>
-                <div className="stack-item-copy">
-                  {latestInsightByType.demand?.summary ?? "No live demand signal is available yet from the current orders feed."}
-                </div>
-              </div>
-              <div className="stack-item">
-                <div className="stack-item-head">
-                  <div className="stack-item-title">Prep Signal</div>
-                  <span className={`status-pill ${latestInsightByType.prep ? statusTone(latestInsightByType.prep.tone) : ""}`}>
-                    {latestInsightByType.prep ? `${latestInsightByType.prep.confidence}% confidence` : "No prep signal"}
-                  </span>
-                </div>
-                <div className="stack-item-copy">
-                  {latestInsightByType.prep?.summary ?? "No live prep signal is available yet from the current inventory and order mix."}
-                </div>
-              </div>
             </div>
           </article>
         </div>
@@ -532,28 +719,28 @@ export function DashboardApp({
   function renderOrders() {
     return (
       <OrdersPanel
-        orders={snapshot.orders}
         filteredOrders={filteredOrders}
-        selectedOrder={selectedOrder}
-        selectedOrderId={selectedOrderId}
-        orderFilter={orderFilter}
         fulfillmentFilter={fulfillmentFilter}
-        orderFilters={orderFilters}
         fulfillmentFilters={fulfillmentFilters}
-        onOrderFilterChange={setOrderFilter}
+        formatCurrency={formatCurrency}
+        onAdvanceStatus={handleAdvanceOrderStatus}
         onFulfillmentFilterChange={setFulfillmentFilter}
-        onSelectOrder={setSelectedOrderId}
+        onOpenCustomer={() => goTo("customers")}
+        onOpenInventory={() => goTo("inventory")}
+        onOrderFilterChange={setOrderFilter}
         onResetFilters={() => {
           setOrderFilter("all");
           setFulfillmentFilter("all");
         }}
-        onOpenInventory={() => goTo("inventory")}
-        onOpenCustomer={() => goTo("customers")}
-        onAdvanceStatus={handleAdvanceOrderStatus}
+        onSelectOrder={setSelectedOrderId}
+        orderFilter={orderFilter}
+        orderFilters={orderFilters}
+        orders={snapshot.orders}
+        selectedOrder={selectedOrder}
+        selectedOrderId={selectedOrderId}
         statusError={statusError}
-        statusUpdating={statusUpdatingOrderId === selectedOrder?.id}
-        formatCurrency={formatCurrency}
         statusTone={statusTone}
+        statusUpdating={statusUpdatingOrderId === selectedOrder?.id}
       />
     );
   }
@@ -566,53 +753,34 @@ export function DashboardApp({
             <div className="card-head">
               <div>
                 <p className="card-kicker">Inventory</p>
-                <h2 className="card-title">Current stock health</h2>
+                <h2 className="card-title">Coverage and prep risk</h2>
               </div>
-              <button className="ghost-button" type="button">Add adjustment</button>
             </div>
             <div className="table-wrap">
               <table className="ops-table">
                 <thead>
                   <tr>
-                    <th>Ingredient</th>
+                    <th>Item</th>
                     <th>On Hand</th>
                     <th>Par</th>
-                    <th>Coverage</th>
                     <th>Status</th>
-                    <th>Signal</th>
+                    <th>Context</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {snapshot.inventory.map((item) => {
-                    const coverage = item.parLevel > 0
-                      ? Math.min(Math.round((item.onHand / item.parLevel) * 100), 100)
-                      : 100;
-                    return (
-                      <tr
-                        className={item.id === selectedInventoryId ? "is-selected" : ""}
-                        key={item.id}
-                        onClick={() => setSelectedInventoryId(item.id)}
-                      >
-                        <td><strong>{item.name}</strong></td>
-                        <td>{item.onHand} {item.unit}</td>
-                        <td>{item.parLevel} {item.unit}</td>
-                        <td>
-                          <div className="metric-bar">
-                            <div className="metric-track">
-                              <div
-                                className={`metric-fill ${item.status === "Low" || item.status === "Out" ? "red" : item.status === "Healthy" ? "green" : ""}`}
-                                style={{ width: `${coverage}%` }}
-                              />
-                            </div>
-                          </div>
-                        </td>
-                        <td><span className={`status-pill ${statusTone(item.status)}`}>{item.status}</span></td>
-                        <td>
-                          {item.notes ?? "Inventory pressure needs operator attention."}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {snapshot.inventory.map((item) => (
+                    <tr
+                      className={item.id === selectedInventory?.id ? "is-selected" : ""}
+                      key={item.id}
+                      onClick={() => setSelectedInventoryId(item.id)}
+                    >
+                      <td>{item.name}</td>
+                      <td>{item.onHand} {item.unit}</td>
+                      <td>{item.parLevel} {item.unit}</td>
+                      <td><span className={`status-pill ${statusTone(item.status)}`}>{item.status}</span></td>
+                      <td>{item.notes ?? "No note recorded."}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -634,34 +802,22 @@ export function DashboardApp({
                   </p>
                 </div>
                 <div className="detail-note">
-                  <strong>Recommended next move</strong>
-                  {selectedInventory.status === "Low" || selectedInventory.status === "Out"
-                    ? "Replenish before the next preorder cutoff so bowls and rolls do not lose key garnish coverage."
-                    : selectedInventory.status === "Watch"
-                      ? "Monitor through the rest of tonight and top up if the next few orders keep the same mix."
-                      : "Coverage is healthy. No immediate action needed beyond routine prep discipline."}
+                  <strong>Current impact</strong>
+                  {getInventoryImpactCopy(selectedInventory)}
                 </div>
                 <div className="detail-list">
-                  <div className="detail-list-item"><span>Last updated</span><strong>{new Date(selectedInventory.lastUpdatedAt).toLocaleString()}</strong></div>
                   <div className="detail-list-item">
-                    <span>Linked menu signal</span>
+                    <span>Linked menu items</span>
                     <strong>
                       {selectedInventory.linkedMenuItems.length
                         ? selectedInventory.linkedMenuItems.map((item) => item.name).join(", ")
-                        : "No linked menu items recorded yet"}
+                        : "No linked menu items yet"}
                     </strong>
                   </div>
                   <div className="detail-list-item">
-                    <span>Recorded context</span>
-                    <strong>{selectedInventory.notes ?? "No prep note is recorded for this item yet."}</strong>
+                    <span>Last updated</span>
+                    <strong>{new Date(selectedInventory.lastUpdatedAt).toLocaleString()}</strong>
                   </div>
-                </div>
-                <div className="detail-note">
-                  <strong>Update stock and context</strong>
-                  Keep the queue honest by updating what is actually on hand before the next prep window tightens up.
-                </div>
-                <div className="detail-actions">
-                  <button className="ghost-button" onClick={() => goTo("menu")} type="button">See menu impact</button>
                 </div>
               </div>
             ) : null}
@@ -672,19 +828,21 @@ export function DashboardApp({
   }
 
   function renderMenu() {
+    const sortedMenu = [...snapshot.menu].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+
     return (
       <section className="view-panel active">
         <div className="content-grid">
-          <div className="card">
+          <article className="card card-span-2">
             <div className="card-head">
               <div>
                 <p className="card-kicker">Menu Control</p>
-                <h2 className="card-title">Allocation and availability</h2>
+                <h2 className="card-title">Live menu items</h2>
               </div>
-              <button className="ghost-button" type="button">Publish next drop</button>
+              <div className="status-badge">{sortedMenu.length} items</div>
             </div>
             <div className="menu-control-grid">
-              {snapshot.menu.map((item: MenuItem) => (
+              {sortedMenu.map((item) => (
                 <article
                   className={`menu-card ${item.id === selectedMenuId ? "is-selected" : ""}`}
                   key={item.id}
@@ -693,83 +851,49 @@ export function DashboardApp({
                   <div className="menu-card-meta">
                     <div>
                       <div className="menu-card-title">{item.name}</div>
-                      <div className="stack-item-meta">{item.category} · {formatCurrency(item.priceCents)}</div>
+                      <div className="stack-item-meta">
+                        {item.category} · {formatCurrency(item.priceCents)} · sort {item.sortOrder}
+                      </div>
                     </div>
                     <span className={`status-pill ${statusTone(item.availability)}`}>{item.availability}</span>
                   </div>
                   <div className="menu-card-copy">{item.description}</div>
-                  <div className="metric-bar">
-                    <label>
-                      <span className="stack-item-meta">Allocation fill</span>
-                      <span className="stack-item-meta">{item.allocationLimit}%</span>
-                    </label>
-                    <div className="metric-track">
-                      <div className="metric-fill" style={{ width: `${item.allocationLimit}%` }} />
-                    </div>
-                  </div>
                   <div className="menu-card-footer">
-                    <span className="chip">{item.isFeatured ? "Featured" : "Menu"}</span>
-                    <span className="stack-item-meta">{item.notes}</span>
+                    <span className="chip">{item.isFeatured ? "Featured" : "Standard"}</span>
+                    <span className="stack-item-meta">{item.notes ?? "No internal note"}</span>
                   </div>
                 </article>
               ))}
             </div>
-          </div>
+          </article>
 
           <aside className="detail-card">
             <div className="card-head">
               <div>
-                <p className="card-kicker">Merchandising Control</p>
+                <p className="card-kicker">Selected Menu Item</p>
                 <h2 className="card-title">{selectedMenu?.name ?? "Select a menu item"}</h2>
               </div>
             </div>
+            {selectedMenu ? renderMenuForm(menuDraft, updateMenuDraft, "Save live menu item", () => saveMenuItem(selectedMenu.id), menuSaving) : null}
             {selectedMenu ? (
-              <div className="detail-panel">
-                <div className="detail-hero">
-                  <h3>{selectedMenu.availability}</h3>
-                  <p>
-                    {formatCurrency(selectedMenu.priceCents)} · {selectedMenu.category} · allocation target {selectedMenu.allocationLimit}%.
-                  </p>
-                </div>
-                <div className="detail-note">
-                  <strong>Current menu read</strong>
-                  {selectedMenu.description}
-                </div>
-                <div className="detail-list">
-                  <div className="detail-list-item">
-                    <span>Ingredient dependencies</span>
-                    <strong>
-                      {selectedMenuDependencies.length
-                        ? selectedMenuDependencies.map((item) => item.name).join(", ")
-                        : "No linked inventory items recorded yet"}
-                    </strong>
-                  </div>
-                  <div className="detail-list-item">
-                    <span>Current inventory risk</span>
-                    <strong>
-                      {selectedMenuRiskItems.length
-                        ? `${selectedMenuRiskItems.length} flagged ingredient${selectedMenuRiskItems.length === 1 ? "" : "s"}`
-                        : selectedMenuDependencies.length
-                          ? "No linked ingredient is currently flagged"
-                          : "No linked ingredient is currently flagged"}
-                    </strong>
-                  </div>
-                  <div className="detail-list-item">
-                    <span>Current merchandising note</span>
-                    <strong>{selectedMenu.notes ?? "No internal merchandising note yet."}</strong>
-                  </div>
-                </div>
-                <div className="detail-note">
-                  <strong>Update live menu controls</strong>
-                  Save only what is true for the current drop so the dashboard matches the real operational plan.
-                </div>
-                <div className="detail-actions">
-                  <button className="ghost-button" onClick={() => goTo("inventory")} type="button">
-                    Open Inventory
-                  </button>
-                </div>
+              <div className="detail-note">
+                <strong>Ingredient dependencies</strong>
+                {selectedMenuDependencies.length
+                  ? selectedMenuDependencies.map((item) => item.name).join(", ")
+                  : "No linked inventory items recorded yet."}
+                {selectedMenuRiskItems.length ? ` ${selectedMenuRiskItems.length} linked ingredient(s) are currently flagged.` : ""}
               </div>
             ) : null}
+            {menuError ? <div className="detail-note"><strong>Error</strong>{menuError}</div> : null}
+            {menuMessage ? <div className="detail-note"><strong>Status</strong>{menuMessage}</div> : null}
+
+            <div className="card-head" style={{ marginTop: "1.25rem" }}>
+              <div>
+                <p className="card-kicker">Create Item</p>
+                <h2 className="card-title">Add a new live menu item</h2>
+              </div>
+            </div>
+            {renderMenuForm(createDraft, updateCreateDraft, "Create menu item", createMenuItem, createSaving)}
           </aside>
         </div>
       </section>
@@ -777,54 +901,6 @@ export function DashboardApp({
   }
 
   function renderCustomers() {
-    const reminderDraftBody = [
-      "You asked to hear about the next MoGrillz drop.",
-      "",
-      "We will send the next menu reveal and reminder before the drop opens.",
-      "",
-      "Reply here if you have any larger-order questions for the upcoming drop.",
-      "",
-      "Chef Mo",
-      "MoGrillz",
-    ].join("\n");
-
-    async function handleCopyReminderEmails() {
-      if (!activeReminderEmails.length) return;
-
-      const text = activeReminderEmails.join(", ");
-
-      try {
-        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text);
-        } else if (typeof document !== "undefined") {
-          const textarea = document.createElement("textarea");
-          textarea.value = text;
-          textarea.setAttribute("readonly", "true");
-          textarea.style.position = "absolute";
-          textarea.style.left = "-9999px";
-          document.body.appendChild(textarea);
-          textarea.select();
-          document.execCommand("copy");
-          textarea.remove();
-        }
-
-        setReminderActionMessage(`Copied ${activeReminderEmails.length} active reminder email${activeReminderEmails.length === 1 ? "" : "s"}.`);
-      } catch {
-        setReminderActionMessage("Could not copy reminder emails on this device.");
-      }
-    }
-
-    function handleOpenReminderDraft() {
-      if (!activeReminderEmails.length || typeof window === "undefined") return;
-
-      const mailto = new URL("mailto:");
-      mailto.searchParams.set("bcc", activeReminderEmails.join(","));
-      mailto.searchParams.set("subject", "MoGrillz Next Drop Reminder");
-      mailto.searchParams.set("body", reminderDraftBody);
-      window.location.href = mailto.toString();
-      setReminderActionMessage(`Opened a draft for ${activeReminderEmails.length} active reminder email${activeReminderEmails.length === 1 ? "" : "s"}.`);
-    }
-
     return (
       <section className="view-panel active">
         <div className="analytics-grid">
@@ -832,7 +908,7 @@ export function DashboardApp({
             <div className="card-head">
               <div>
                 <p className="card-kicker">Customers</p>
-                <h2 className="card-title">Repeat behavior and trust signals</h2>
+                <h2 className="card-title">Tracked buyers and recent value</h2>
               </div>
               <div className="status-badge">{snapshot.customers.length} tracked</div>
             </div>
@@ -850,79 +926,61 @@ export function DashboardApp({
                     </div>
                     <span className={`status-pill ${statusTone(customer.loyaltyTier)}`}>{customer.loyaltyTier}</span>
                   </div>
-                  <div className="customer-card-copy">{customer.notes ?? "No customer notes yet."}</div>
+                  <div className="customer-card-copy">{customer.notes ?? "No customer note yet."}</div>
                   <div className="customer-card-footer">
                     <span className="chip">{formatCurrency(customer.lifetimeValueCents)} lifetime</span>
-                    <button className="ghost-button" onClick={() => goTo("orders")} type="button">Open orders view</button>
                   </div>
                 </article>
               ))}
             </div>
+            {selectedCustomer ? (
+              <div className="detail-note" style={{ marginTop: "1rem" }}>
+                <strong>Selected customer</strong>
+                {selectedCustomer.email ?? "No email on file"} · last order {new Date(selectedCustomer.lastOrderAt).toLocaleString()}
+              </div>
+            ) : null}
           </div>
 
           <div className="card">
             <div className="card-head">
               <div>
-                <p className="card-kicker">Drop Reminders</p>
-                <h2 className="card-title">Captured next-drop demand</h2>
+                <p className="card-kicker">Email Updates</p>
+                <h2 className="card-title">Customers waiting for the next menu message</h2>
               </div>
-              <div className="status-badge">{reminderSummary.activeCount} active</div>
+              <div className="status-badge">{emailUpdateSummary.activeCount} active</div>
             </div>
             <div className="customer-card-footer" style={{ marginTop: 0, marginBottom: 16 }}>
-              <span className="chip">{reminderSummary.recentCount} requested this week</span>
-              <span className="chip">{snapshot.dropReminders.length} total signups</span>
+              <span className="chip">{emailUpdateSummary.recentCount} requested this week</span>
+              <span className="chip">{snapshot.emailUpdates.length} total signups</span>
             </div>
             <div className="detail-actions" style={{ marginBottom: 16 }}>
-              <button
-                className="ghost-button"
-                disabled={!activeReminderEmails.length}
-                onClick={handleCopyReminderEmails}
-                type="button"
-              >
+              <button className="ghost-button" disabled={!activeUpdateEmails.length} onClick={handleCopyUpdateEmails} type="button">
                 Copy active emails
               </button>
-              <button
-                className="ghost-button"
-                disabled={!activeReminderEmails.length}
-                onClick={handleOpenReminderDraft}
-                type="button"
-              >
+              <button className="ghost-button" disabled={!activeUpdateEmails.length} onClick={handleOpenUpdateDraft} type="button">
                 Open outreach draft
               </button>
             </div>
-            {reminderActionMessage ? (
-              <div className="detail-note" style={{ marginBottom: 16 }}>
-                <strong>Reminder action</strong>
-                {reminderActionMessage}
-              </div>
-            ) : null}
-            {reminderSummary.reminders.length ? (
-              <div className="customer-grid">
-                {reminderSummary.reminders.map((reminder) => (
-                  <article className="customer-card" key={reminder.id}>
-                    <div className="customer-card-meta">
-                      <div>
-                        <div className="customer-card-title">{reminder.email}</div>
-                        <div className="stack-item-meta">{formatReminderSource(reminder) || "Website signup"}</div>
-                      </div>
-                      <span className={`status-pill ${statusTone(reminder.status)}`}>{reminder.status}</span>
+            <div className="customer-grid">
+              {emailUpdateSummary.updates.map((update) => (
+                <article className="customer-card" key={update.id}>
+                  <div className="customer-card-meta">
+                    <div>
+                      <div className="customer-card-title">{update.email}</div>
+                      <div className="stack-item-meta">{formatReminderSource(update) || "Website signup"}</div>
                     </div>
-                    <div className="customer-card-copy">{reminder.notes ?? "No internal note recorded for this signup yet."}</div>
-                    <div className="customer-card-footer">
-                      <span className="chip">{new Date(reminder.lastRequestedAt).toLocaleString()}</span>
-                      <a className="ghost-button" href={`mailto:${reminder.email}`} onClick={(event) => event.stopPropagation()}>
-                        Email contact
-                      </a>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="detail-note">
-                <strong>No reminder signups yet.</strong>
-                The success-page email capture is live, so new signups will land here as customers opt in after checkout.
-              </div>
-            )}
+                    <span className={`status-pill ${statusTone(update.status)}`}>{update.status}</span>
+                  </div>
+                  <div className="customer-card-copy">{update.notes ?? "No internal note recorded."}</div>
+                  <div className="customer-card-footer">
+                    <span className="chip">{new Date(update.lastRequestedAt).toLocaleString()}</span>
+                    <a className="ghost-button" href={`mailto:${update.email}`} onClick={(event) => event.stopPropagation()}>
+                      Email contact
+                    </a>
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -943,65 +1001,23 @@ export function DashboardApp({
               </div>
               <div className="status-badge">{getOrderVolumeLabel(snapshot)}</div>
             </div>
-            <div className="bars-grid">
+            <div className="bars-list">
               {analyticsBars.map((bar) => (
-                <article className="bar-card" key={bar.label}>
-                  <div className="bar-label">{bar.label}</div>
+                <div className="bar-row" key={bar.label}>
+                  <div className="bar-copy">
+                    <strong>{bar.label}</strong>
+                    <span>{bar.meta}</span>
+                  </div>
                   <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${Math.round((bar.value / maxValue) * 100)}%` }} />
+                    <div className="bar-fill" style={{ width: `${Math.max((bar.value / maxValue) * 100, 8)}%` }} />
                   </div>
-                  <div className="bar-value">{bar.value}% allocation · {bar.meta}</div>
-                </article>
-              ))}
-            </div>
-          </article>
-
-          <article className="card">
-            <div className="card-head">
-              <div>
-                <p className="card-kicker">Best Customers</p>
-                <h2 className="card-title">Highest value</h2>
-              </div>
-            </div>
-            <div className="stack-list">
-              {topCustomers.map((customer) => (
-                <div className="stack-item" key={customer.id}>
-                  <div className="stack-item-head">
-                    <div className="stack-item-title">{customer.name}</div>
-                    <span className={`status-pill ${statusTone(customer.loyaltyTier)}`}>{customer.loyaltyTier}</span>
-                  </div>
-                  <div className="stack-item-copy">{customer.notes}</div>
-                  <div className="stack-item-meta">{formatCurrency(customer.lifetimeValueCents)} lifetime spend</div>
+                  <span className="bar-value">{bar.value}%</span>
                 </div>
               ))}
             </div>
           </article>
 
-          <FulfillmentAnalyticsCards
-            fulfillmentSummary={fulfillmentSummary}
-            formatCurrency={formatCurrency}
-          />
-
-          <article className="card">
-            <div className="card-head">
-              <div>
-                <p className="card-kicker">Operational Notes</p>
-                <h2 className="card-title">What changed</h2>
-              </div>
-            </div>
-            <div className="stack-list">
-              {snapshot.insights.map((insight) => (
-                <div className="stack-item" key={insight.id}>
-                  <div className="stack-item-head">
-                    <div className="stack-item-title">{insight.title}</div>
-                    <span className={`status-pill ${statusTone(insight.tone)}`}>{insight.confidence}%</span>
-                  </div>
-                  <div className="stack-item-copy">{insight.summary}</div>
-                  <div className="stack-item-meta">{insight.actionText}</div>
-                </div>
-              ))}
-            </div>
-          </article>
+          <FulfillmentAnalyticsCards fulfillmentSummary={fulfillmentSummary} formatCurrency={formatCurrency} />
         </div>
       </section>
     );
@@ -1042,7 +1058,7 @@ export function DashboardApp({
             <div className="card-head">
               <div>
                 <p className="card-kicker">Automation Stack</p>
-                <h2 className="card-title">Internal AI surfaces</h2>
+                <h2 className="card-title">Current surfaces</h2>
               </div>
             </div>
             <div className="stack-list">
@@ -1055,24 +1071,10 @@ export function DashboardApp({
               </div>
               <div className="stack-item">
                 <div className="stack-item-head">
-                  <div className="stack-item-title">Social Campaign Agent</div>
-                  <span className="status-pill warning">Ready once secret is configured</span>
+                  <div className="stack-item-title">Customer Mobile App</div>
+                  <span className="status-pill warning">Phase 1 build</span>
                 </div>
-                <div className="stack-item-copy">Internal campaign pack generator for Instagram and TikTok.</div>
-              </div>
-              <div className="stack-item">
-                <div className="stack-item-head">
-                  <div className="stack-item-title">SMS Reminder Layer</div>
-                  <span className="status-pill warning">Recommended next build</span>
-                </div>
-                <div className="stack-item-copy">Best next lightweight automation after campaign generation.</div>
-              </div>
-              <div className="stack-item">
-                <div className="stack-item-head">
-                  <div className="stack-item-title">Voice AI Call Center</div>
-                  <span className="status-pill danger">Prototype next</span>
-                </div>
-                <div className="stack-item-copy">Best long-term MoGrillz dogfood for your AI services offer.</div>
+                <div className="stack-item-copy">Native ordering app using shared menu, auth, and checkout flows.</div>
               </div>
             </div>
           </article>
@@ -1080,6 +1082,8 @@ export function DashboardApp({
       </section>
     );
   }
+
+  const currentSection = sectionMeta[view];
 
   return (
     <div className="dashboard-shell">
@@ -1125,18 +1129,19 @@ export function DashboardApp({
 
           <div className="topbar-rail">
             <div className="topbar-pill">
-              <span className="pill-label">Current Drop</span>
-              <strong>{snapshot.drop.day}</strong>
+              <span className="pill-label">Service Date</span>
+              <strong>{snapshot.operations.serviceDateLabel}</strong>
             </div>
             <div className="topbar-pill topbar-pill-accent">
               <span className="pill-label">Status</span>
-              <strong>{snapshot.drop.status}</strong>
+              <strong>{snapshot.operations.status}</strong>
             </div>
             <button className="topbar-action" onClick={() => goTo("orders")} type="button">
               Open Live Queue
             </button>
           </div>
         </header>
+
         {dataIssue && !initialSnapshot ? (
           <section className="view-panel active">
             <article className="card">
@@ -1173,3 +1178,25 @@ export function DashboardApp({
     </div>
   );
 }
+
+const inputStyle = {
+  width: "100%",
+  marginTop: "0.75rem",
+  padding: "0.85rem 1rem",
+  borderRadius: "14px",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(255,255,255,0.03)",
+  color: "inherit",
+} satisfies CSSProperties;
+
+const textareaStyle = {
+  width: "100%",
+  minHeight: "120px",
+  marginTop: "0.75rem",
+  padding: "0.9rem 1rem",
+  borderRadius: "14px",
+  border: "1px solid rgba(255,255,255,0.1)",
+  background: "rgba(255,255,255,0.03)",
+  color: "inherit",
+  resize: "vertical",
+} satisfies CSSProperties;

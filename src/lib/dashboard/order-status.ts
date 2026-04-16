@@ -3,7 +3,7 @@ import type { OrderStatus } from "@/types/domain";
 const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   New: "In Prep",
   "In Prep": "Ready",
-  Ready: "Delivered",
+  Ready: "Picked Up",
 };
 
 export function normalizeOrderStatus(value: unknown): OrderStatus | null {
@@ -17,7 +17,8 @@ export function normalizeOrderStatus(value: unknown): OrderStatus | null {
     case "ready":
       return "Ready";
     case "delivered":
-      return "Delivered";
+    case "picked up":
+      return "Picked Up";
     case "cancelled":
       return "Cancelled";
     default:

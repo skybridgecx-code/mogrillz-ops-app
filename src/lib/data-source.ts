@@ -1,10 +1,10 @@
 import { cloneMockSnapshot } from "@/lib/mock-data";
+import { normalizeOrderStatus } from "@/lib/dashboard/order-status";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   Customer,
   DashboardSnapshot,
-  DropReminder,
-  DropDay,
+  EmailUpdate,
   Insight,
   InventoryItem,
   InventoryLinkedMenuItem,
@@ -22,7 +22,17 @@ export interface DashboardDataState {
 }
 
 function shouldUseMockData() {
-  return process.env.NEXT_PUBLIC_USE_MOCK_DATA !== "false";
+  const raw = process.env.NEXT_PUBLIC_USE_MOCK_DATA?.trim().toLowerCase();
+  return raw === "true" || raw === "1";
+}
+
+function hasSupabaseDataConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const publishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+
+  return Boolean(url && publishableKey);
 }
 
 type Row = Record<string, unknown>;
@@ -78,7 +88,7 @@ function mapOrderItem(row: Row): OrderItem {
 
 function mapOrder(row: Row): Order {
   const nestedItems = Array.isArray(row.order_items) ? row.order_items : [];
-  const fulfillmentMethod = readString(row.fulfillment_method, "delivery").toLowerCase() === "pickup" ? "pickup" : "delivery";
+  const fulfillmentMethod = readString(row.fulfillment_method, "pickup").toLowerCase() === "delivery" ? "delivery" : "pickup";
   const id = readString(row.id, crypto.randomUUID());
   return {
     id,
@@ -86,10 +96,11 @@ function mapOrder(row: Row): Order {
     customerName: readString(row.customer_name, "Unknown Customer"),
     customerEmail: typeof row.customer_email === "string" ? row.customer_email : null,
     customerZone: readString(row.zone, "Northern Virginia"),
-    status: capitalizeWords(readString(row.status), "New") as Order["status"],
-    dropDay: capitalizeWords(readString(row.drop_day), "Wednesday") as Order["dropDay"],
+    status: normalizeOrderStatus(row.status) ?? "New",
+    serviceDate: typeof row.service_date === "string" ? row.service_date : null,
+    legacyDropDay: typeof row.drop_day === "string" ? capitalizeWords(readString(row.drop_day), "") : null,
     fulfillmentMethod,
-    deliveryWindow: normalizeDeliveryWindow(row.delivery_window, fulfillmentMethod),
+    serviceWindow: normalizeDeliveryWindow(row.delivery_window, fulfillmentMethod),
     totalCents: readNumber(row.total_cents, 0),
     customRequest: typeof row.custom_request === "string" ? row.custom_request : null,
     operatorNote: typeof row.operator_note === "string" ? row.operator_note : null,
@@ -116,14 +127,18 @@ function mapInventoryItem(row: Row, linkedMenuItems: InventoryLinkedMenuItem[] =
 }
 
 function mapMenuItem(row: Row): MenuItem {
+  const slug = readString(row.slug, readString(row.id, crypto.randomUUID()));
   return {
-    id: readString(row.slug || row.id, crypto.randomUUID()),
+    id: readString(row.id, slug),
+    slug,
     name: readString(row.name, "Unknown Menu Item"),
     category: readString(row.category, "Menu"),
     priceCents: readNumber(row.price_cents, 0),
     availability: capitalizeWords(readString(row.availability), "Live") as MenuItem["availability"],
     allocationLimit: readNumber(row.allocation_limit, 0),
     description: readString(row.description, ""),
+    imageUrl: typeof row.image_url === "string" ? row.image_url : null,
+    sortOrder: readNumber(row.sort_order, 0),
     isFeatured: Boolean(row.is_featured),
     notes: typeof row.notes === "string" ? row.notes : null,
   };
@@ -144,13 +159,13 @@ function mapCustomer(row: Row): Customer {
   };
 }
 
-function mapDropReminder(row: Row): DropReminder {
+function mapEmailUpdate(row: Row): EmailUpdate {
   return {
     id: readString(row.id, crypto.randomUUID()),
     email: readString(row.email),
     source: readString(row.source, "website"),
     signupLocation: typeof row.signup_location === "string" ? row.signup_location : null,
-    status: capitalizeWords(readString(row.status), "Active") as DropReminder["status"],
+    status: capitalizeWords(readString(row.status), "Active") as EmailUpdate["status"],
     notes: typeof row.notes === "string" ? row.notes : null,
     lastRequestedAt: readString(row.last_requested_at, new Date().toISOString()),
     createdAt: readString(row.created_at, new Date().toISOString()),
@@ -198,38 +213,43 @@ function formatCompactCurrency(cents: number) {
   }).format(cents / 100);
 }
 
-function getCurrentScheduledDropDay(now = new Date()): DropDay {
-  const weekday = now.getDay();
-  if (weekday <= 1) return "Monday";
-  if (weekday <= 3) return "Wednesday";
-  if (weekday <= 5) return "Friday";
-  return "Monday";
+function formatServiceDateLabel(serviceDate: string | null) {
+  if (!serviceDate) return "Upcoming";
+
+  const parsed = new Date(`${serviceDate}T12:00:00`);
+  if (!Number.isFinite(parsed.getTime())) return "Upcoming";
+
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
-function deriveDropSnapshot(orders: Order[]): DashboardSnapshot["drop"] {
+function deriveOperationsSnapshot(orders: Order[]): DashboardSnapshot["operations"] {
   if (!orders.length) {
     return {
-      day: getCurrentScheduledDropDay(),
+      serviceDateLabel: "Upcoming",
       status: "No live orders",
-      window: "Awaiting synced orders",
-      cutoff: "Check public site schedule",
+      queueSummary: "Awaiting synced orders",
+      serviceWindow: "Pickup details confirmed after checkout",
     };
   }
 
-  const ordersByDay = new Map<DropDay, Order[]>();
+  const ordersByDate = new Map<string, Order[]>();
   for (const order of orders) {
-    const existing = ordersByDay.get(order.dropDay) ?? [];
+    const key = order.serviceDate || order.legacyDropDay || "unscheduled";
+    const existing = ordersByDate.get(key) ?? [];
     existing.push(order);
-    ordersByDay.set(order.dropDay, existing);
+    ordersByDate.set(key, existing);
   }
 
-  let activeDay: DropDay = orders[0].dropDay;
-  let activeOrders = ordersByDay.get(activeDay) ?? [orders[0]];
+  let activeKey = orders[0].serviceDate || orders[0].legacyDropDay || "unscheduled";
+  let activeOrders = ordersByDate.get(activeKey) ?? [orders[0]];
 
-  for (const [day, dayOrders] of ordersByDay.entries()) {
-    if (dayOrders.length > activeOrders.length) {
-      activeDay = day;
-      activeOrders = dayOrders;
+  for (const [key, dateOrders] of ordersByDate.entries()) {
+    if (dateOrders.length > activeOrders.length) {
+      activeKey = key;
+      activeOrders = dateOrders;
     }
   }
 
@@ -239,8 +259,8 @@ function deriveDropSnapshot(orders: Order[]): DashboardSnapshot["drop"] {
       ? "Orders Active"
       : "Service Wrapped";
 
-  const windows = [...new Set(activeOrders.map((order) => order.deliveryWindow).filter(Boolean))];
-  const window =
+  const windows = [...new Set(activeOrders.map((order) => order.serviceWindow).filter(Boolean))];
+  const serviceWindow =
     windows.length === 0
       ? "Window pending"
       : windows.length === 1
@@ -248,10 +268,15 @@ function deriveDropSnapshot(orders: Order[]): DashboardSnapshot["drop"] {
         : `${windows.length} live fulfillment windows`;
 
   return {
-    day: activeDay,
+    serviceDateLabel:
+      activeKey === "unscheduled"
+        ? "Upcoming"
+        : activeOrders[0]?.serviceDate
+          ? formatServiceDateLabel(activeOrders[0].serviceDate)
+          : activeKey,
     status,
-    window,
-    cutoff: `${activeOrders.length} synced orders`,
+    queueSummary: `${activeOrders.length} synced orders`,
+    serviceWindow,
   };
 }
 
@@ -337,7 +362,7 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
         return [
           databaseId,
           {
-            id: readString(row.slug || row.id, databaseId || crypto.randomUUID()),
+            id: databaseId || crypto.randomUUID(),
             name: readString(row.name, "Unknown Menu Item"),
           },
         ];
@@ -367,20 +392,20 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
       ),
     );
     const customers = (customersResponse.data ?? []).map((row) => mapCustomer(row as Row));
-    const dropReminders = dropRemindersResponse.error
+    const emailUpdates = dropRemindersResponse.error
       ? []
-      : (dropRemindersResponse.data ?? []).map((row) => mapDropReminder(row as Row));
+      : (dropRemindersResponse.data ?? []).map((row) => mapEmailUpdate(row as Row));
     const insights = (insightsResponse.data ?? []).map((row) => mapInsight(row as Row));
 
     return {
       generatedAt: new Date().toISOString(),
-      drop: deriveDropSnapshot(orders),
+      operations: deriveOperationsSnapshot(orders),
       kpis: deriveKpis(orders, inventory),
       orders,
       inventory,
       menu,
       customers,
-      dropReminders,
+      emailUpdates,
       insights,
     };
   } catch {
@@ -394,6 +419,15 @@ export async function loadDashboardDataState(): Promise<DashboardDataState> {
       snapshot: cloneMockSnapshot(),
       dataSource: "mock",
       dataIssue: null,
+    };
+  }
+
+  if (!hasSupabaseDataConfig()) {
+    return {
+      snapshot: null,
+      dataSource: "supabase",
+      dataIssue:
+        "Supabase config is missing, and mock mode is not explicitly enabled. The dashboard is intentionally blocked to avoid showing fake ops data.",
     };
   }
 

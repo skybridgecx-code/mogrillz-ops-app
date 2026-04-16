@@ -1,6 +1,4 @@
-export type DropDay = "Monday" | "Wednesday" | "Friday";
-
-export type OrderStatus = "New" | "In Prep" | "Ready" | "Delivered" | "Cancelled";
+export type OrderStatus = "New" | "In Prep" | "Ready" | "Picked Up" | "Cancelled";
 
 export type FulfillmentMethod = "delivery" | "pickup";
 
@@ -27,9 +25,10 @@ export interface Order {
   customerEmail: string | null;
   customerZone: string;
   status: OrderStatus;
-  dropDay: DropDay;
+  serviceDate: string | null;
+  legacyDropDay: string | null;
   fulfillmentMethod: FulfillmentMethod;
-  deliveryWindow: string;
+  serviceWindow: string;
   totalCents: number;
   customRequest: string | null;
   operatorNote?: string | null;
@@ -59,12 +58,15 @@ export interface InventoryItem {
 
 export interface MenuItem {
   id: string;
+  slug: string;
   name: string;
   category: string;
   priceCents: number;
   availability: MenuAvailability;
   allocationLimit: number;
   description: string;
+  imageUrl: string | null;
+  sortOrder: number;
   isFeatured: boolean;
   notes: string | null;
 }
@@ -81,7 +83,7 @@ export interface Customer {
   lastOrderAt: string;
 }
 
-export interface DropReminder {
+export interface EmailUpdate {
   id: string;
   email: string;
   source: string;
@@ -106,11 +108,11 @@ export interface Insight {
 
 export interface DashboardSnapshot {
   generatedAt: string;
-  drop: {
-    day: DropDay;
+  operations: {
+    serviceDateLabel: string;
     status: string;
-    window: string;
-    cutoff: string;
+    queueSummary: string;
+    serviceWindow: string;
   };
   kpis: Array<{
     label: string;
@@ -122,6 +124,6 @@ export interface DashboardSnapshot {
   inventory: InventoryItem[];
   menu: MenuItem[];
   customers: Customer[];
-  dropReminders: DropReminder[];
+  emailUpdates: EmailUpdate[];
   insights: Insight[];
 }

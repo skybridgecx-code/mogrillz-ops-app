@@ -31,6 +31,7 @@ create table if not exists customers (
   name text not null,
   email text,
   phone text,
+  auth_user_id uuid unique references auth.users(id) on delete set null,
   zone text not null,
   total_orders integer not null default 0,
   lifetime_value_cents integer not null default 0,
@@ -61,6 +62,8 @@ create table if not exists menu_items (
   availability text not null default 'live',
   allocation_limit integer not null default 0,
   description text not null,
+  image_url text,
+  sort_order integer not null default 0,
   is_featured boolean not null default false,
   notes text,
   created_at timestamptz not null default now(),
@@ -94,8 +97,9 @@ create table if not exists orders (
   customer_name text not null,
   customer_email text,
   status text not null default 'new',
-  drop_day text not null,
-  fulfillment_method text not null default 'delivery',
+  drop_day text,
+  service_date date,
+  fulfillment_method text not null default 'pickup',
   delivery_window text not null,
   zone text not null,
   total_cents integer not null default 0,
@@ -109,6 +113,12 @@ create table if not exists orders (
 );
 
 alter table orders add column if not exists operator_note text;
+alter table customers add column if not exists auth_user_id uuid unique references auth.users(id) on delete set null;
+alter table menu_items add column if not exists image_url text;
+alter table menu_items add column if not exists sort_order integer not null default 0;
+alter table orders add column if not exists service_date date;
+alter table orders alter column drop_day drop not null;
+alter table orders alter column fulfillment_method set default 'pickup';
 
 create table if not exists order_items (
   id uuid primary key default gen_random_uuid(),
@@ -137,7 +147,9 @@ create table if not exists insights (
 
 create index if not exists idx_orders_status_created_at on orders (status, created_at desc);
 create index if not exists idx_orders_drop_day_created_at on orders (drop_day, created_at desc);
+create index if not exists idx_orders_service_date_created_at on orders (service_date, created_at desc);
 create index if not exists idx_orders_customer_id on orders (customer_id);
+create index if not exists idx_orders_customer_email on orders (customer_email);
 create index if not exists idx_order_items_order_id on order_items (order_id);
 create index if not exists idx_order_items_menu_item_id on order_items (menu_item_id);
 create index if not exists idx_inventory_status_name on inventory_items (status, name);
@@ -145,7 +157,9 @@ create index if not exists idx_inventory_item_menu_links_inventory_item_id on in
 create index if not exists idx_inventory_item_menu_links_menu_item_id on inventory_item_menu_links (menu_item_id);
 create index if not exists idx_drop_reminders_status_created_at on drop_reminders (status, created_at desc);
 create index if not exists idx_menu_items_category_availability on menu_items (category, availability);
+create index if not exists idx_menu_items_sort_order on menu_items (sort_order, updated_at desc);
 create index if not exists idx_customers_zone_tier on customers (zone, loyalty_tier);
+create index if not exists idx_customers_auth_user_id on customers (auth_user_id);
 create index if not exists idx_insights_type_active on insights (type, is_active, created_at desc);
 create index if not exists idx_admin_memberships_user_id on admin_memberships (user_id);
 create index if not exists idx_admin_memberships_email on admin_memberships (email);
@@ -201,8 +215,19 @@ as $$
   );
 $$;
 
+create or replace function current_auth_email()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select lower(coalesce(auth.jwt() ->> 'email', ''));
+$$;
+
 grant usage on schema public to authenticated;
 grant execute on function is_admin_user() to authenticated;
+grant execute on function current_auth_email() to authenticated;
 grant select, insert, update, delete on admin_memberships to authenticated;
 grant select, insert, update, delete on customers to authenticated;
 grant select, insert, update, delete on drop_reminders to authenticated;
@@ -257,7 +282,11 @@ create policy "customers_select"
 on customers
 for select
 to authenticated
-using (public.is_admin_user());
+using (
+  public.is_admin_user()
+  or auth_user_id = (select auth.uid())
+  or lower(coalesce(email, '')) = public.current_auth_email()
+);
 
 drop policy if exists "customers_insert" on customers;
 create policy "customers_insert"
@@ -402,7 +431,15 @@ create policy "orders_select"
 on orders
 for select
 to authenticated
-using (public.is_admin_user());
+using (
+  public.is_admin_user()
+  or lower(coalesce(customer_email, '')) = public.current_auth_email()
+  or customer_id in (
+    select id
+    from public.customers
+    where auth_user_id = (select auth.uid())
+  )
+);
 
 drop policy if exists "orders_insert" on orders;
 create policy "orders_insert"
@@ -431,7 +468,19 @@ create policy "order_items_select"
 on order_items
 for select
 to authenticated
-using (public.is_admin_user());
+using (
+  public.is_admin_user()
+  or order_id in (
+    select id
+    from public.orders
+    where lower(coalesce(customer_email, '')) = public.current_auth_email()
+       or customer_id in (
+         select id
+         from public.customers
+         where auth_user_id = (select auth.uid())
+       )
+  )
+);
 
 drop policy if exists "order_items_insert" on order_items;
 create policy "order_items_insert"
@@ -483,3 +532,75 @@ on insights
 for delete
 to authenticated
 using (public.is_admin_user());
+
+-- ============================================================================
+-- AUTH-TO-CUSTOMER LINKING
+-- Called by mobile app after successful magic-link sign-in
+-- ============================================================================
+
+create or replace function link_auth_user_to_customer()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as 
+$$
+declare
+  v_user_id uuid;
+  v_user_email text;
+  v_customer_id uuid;
+  v_updated boolean := false;
+begin
+  -- Get current auth user
+  v_user_id := auth.uid();
+  if v_user_id is null then
+    return jsonb_build_object('success', false, 'error', 'Not authenticated');
+  end if;
+
+  -- Get user email from JWT
+  v_user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
+  if v_user_email = '' then
+    return jsonb_build_object('success', false, 'error', 'No email in auth token');
+  end if;
+
+  -- Check if already linked
+  select id into v_customer_id
+  from customers
+  where auth_user_id = v_user_id
+  limit 1;
+
+  if v_customer_id is not null then
+    return jsonb_build_object(
+      'success', true,
+      'already_linked', true,
+      'customer_id', v_customer_id
+    );
+  end if;
+
+  -- Find customer by email and link
+  update customers
+  set auth_user_id = v_user_id,
+      updated_at = now()
+  where lower(email) = v_user_email
+    and auth_user_id is null
+  returning id into v_customer_id;
+
+  if v_customer_id is not null then
+    return jsonb_build_object(
+      'success', true,
+      'linked', true,
+      'customer_id', v_customer_id
+    );
+  end if;
+
+  -- No customer record found for this email
+  return jsonb_build_object(
+    'success', true,
+    'linked', false,
+    'message', 'No customer record found for this email'
+  );
+end;
+$$
+;
+
+grant execute on function link_auth_user_to_customer() to authenticated;

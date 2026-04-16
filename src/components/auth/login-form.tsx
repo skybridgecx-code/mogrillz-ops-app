@@ -100,8 +100,8 @@ export function LoginForm({ authReady }: LoginFormProps) {
 
         <div className={styles.surfaceRow}>
           <div className={styles.surface}>
-            <span className={styles.surfaceLabel}>Drop model</span>
-            <strong>Mon / Wed / Fri</strong>
+            <span className={styles.surfaceLabel}>Service model</span>
+            <strong>Always open pickup</strong>
           </div>
           <div className={styles.surface}>
             <span className={styles.surfaceLabel}>Access</span>

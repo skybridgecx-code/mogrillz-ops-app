@@ -1,6 +1,6 @@
 import type { Order } from "@/types/domain";
 
-export type OrderFilter = "all" | "new" | "in prep" | "ready" | "delivered";
+export type OrderFilter = "all" | "new" | "in prep" | "ready" | "picked up";
 export type FulfillmentFilter = "all" | "delivery" | "pickup";
 
 interface OrderFiltersProps {
