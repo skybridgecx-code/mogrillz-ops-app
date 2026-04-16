@@ -6,6 +6,19 @@ function shortOrderNumber(orderNumber: string) {
   return `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
 
+function getFulfillmentLabel(order: Order) {
+  return order.fulfillmentMethod === "pickup" ? "Next-day pickup" : "Delivery";
+}
+
+function getFulfillmentWindowCopy(order: Order) {
+  if (order.fulfillmentMethod !== "pickup") return order.serviceWindow;
+
+  return order.serviceWindow
+    .replace(/delivery timing confirmed after checkout/gi, "Pickup details confirmed after checkout")
+    .replace(/delivery details confirmed after checkout/gi, "Pickup details confirmed after checkout")
+    .replace(/^delivery\s*:\s*/i, "Pickup: ");
+}
+
 interface OrdersTableProps {
   orders: Order[];
   selectedOrderId: string;
@@ -55,8 +68,8 @@ export function OrdersTable({
               </td>
               <td>{order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}</td>
               <td>
-                <div>{order.fulfillmentMethod === "pickup" ? "Next-day pickup" : "Pickup"}</div>
-                <span className="row-subtle">{order.serviceWindow}</span>
+                <div>{getFulfillmentLabel(order)}</div>
+                <span className="row-subtle">{getFulfillmentWindowCopy(order)}</span>
               </td>
               <td><span className={`status-pill ${statusTone(order.status)}`}>{order.status}</span></td>
               <td>{formatCurrency(order.totalCents)}</td>

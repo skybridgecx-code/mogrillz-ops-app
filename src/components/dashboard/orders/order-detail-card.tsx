@@ -10,6 +10,16 @@ function shortOrderNumber(orderNumber: string) {
   return `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
 
+function getCustomerRequestCopy(order: Order) {
+  const request = order.customRequest?.trim();
+  if (!request) return "No customer request on this order.";
+  if (order.fulfillmentMethod !== "pickup") return request;
+
+  return request
+    .replace(/^delivery\s*:\s*/i, "Pickup request: ")
+    .replace(/delivery timing confirmed after checkout/gi, "Pickup details confirmed after checkout");
+}
+
 interface OrderDetailCardProps {
   selectedOrder: Order | null;
   onOpenInventory: () => void;
@@ -87,12 +97,12 @@ export function OrderDetailCard({
             <p>
               {selectedOrder.fulfillmentMethod === "pickup"
                 ? `Pickup. ${selectedOrder.serviceWindow}. Total ${formatCurrency(selectedOrder.totalCents)}.`
-                : `Pickup. ${selectedOrder.serviceWindow}. Zone: ${selectedOrder.customerZone}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
+                : `Delivery. ${selectedOrder.serviceWindow}. Zone: ${selectedOrder.customerZone}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
             </p>
           </div>
           <div className="detail-note">
-            <strong>Custom request</strong>
-            {selectedOrder.customRequest ?? "No custom request on this order."}
+            <strong>Customer request</strong>
+            {getCustomerRequestCopy(selectedOrder)}
           </div>
           <div className="detail-note">
             <strong>Internal operator note</strong>

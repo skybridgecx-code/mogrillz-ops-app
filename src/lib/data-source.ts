@@ -64,11 +64,23 @@ function normalizeDeliveryWindow(value: unknown, fulfillmentMethod: Order["fulfi
   const fallback =
     fulfillmentMethod === "pickup"
       ? "Pickup details confirmed after checkout"
-      : "Next-day pickup details confirmed after checkout";
+      : "Delivery details confirmed after checkout";
 
   if (!raw) return fallback;
-  if (raw.toLowerCase() === "pending route confirmation") {
+
+  const normalizedRaw = raw.toLowerCase();
+  if (
+    normalizedRaw === "pending route confirmation" ||
+    normalizedRaw === "delivery timing confirmed after checkout" ||
+    normalizedRaw === "delivery details confirmed after checkout"
+  ) {
     return fallback;
+  }
+
+  if (fulfillmentMethod === "pickup") {
+    return raw
+      .replace(/\bdelivery\b/gi, "pickup")
+      .replace(/\broute\b/gi, "pickup");
   }
 
   return raw;
