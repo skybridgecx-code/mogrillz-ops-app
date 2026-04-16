@@ -8,7 +8,7 @@ export interface FulfillmentSummary {
 }
 
 export function getFulfillmentSummary(orders: Order[]): FulfillmentSummary {
-  const deliveryOrders = orders.filter((order) => order.fulfillmentMethod === "delivery");
+  const deliveryOrders = orders.filter((order) => order.fulfillmentMethod === "pickup");
   const pickupOrders = orders.filter((order) => order.fulfillmentMethod === "pickup");
 
   return {

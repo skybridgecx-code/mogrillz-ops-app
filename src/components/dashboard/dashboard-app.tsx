@@ -240,7 +240,7 @@ export function DashboardApp({
   }, [selectedMenu]);
 
   const orderFilters: OrderFilter[] = ["all", "new", "in prep", "ready", "picked up"];
-  const fulfillmentFilters: FulfillmentFilter[] = ["all", "delivery", "pickup"];
+  const fulfillmentFilters: FulfillmentFilter[] = ["all", "pickup"];
   const fulfillmentSummary = useMemo(() => getFulfillmentSummary(snapshot.orders), [snapshot.orders]);
   const lowStockItems = useMemo(
     () => snapshot.inventory.filter((item) => item.status === "Low" || item.status === "Out"),
@@ -1091,10 +1091,10 @@ export function DashboardApp({
         <div className="brand-block">
           <div className="brand-kicker">Operator Console</div>
           <div className="brand-mark">
-            <span className="brand-mo">MO</span>
-            <span className="brand-grillz">GRILLZ</span>
+            <span className="brand-mo">SHAMA’S</span>
+            <span className="brand-grillz">KITCHEN</span>
           </div>
-          <div className="brand-sub">Ops App</div>
+          <div className="brand-sub">Ops Console</div>
         </div>
 
         <nav aria-label="Dashboard sections" className="nav-stack">

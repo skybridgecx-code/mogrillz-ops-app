@@ -281,7 +281,6 @@ function deriveOperationsSnapshot(orders: Order[]): DashboardSnapshot["operation
 }
 
 function deriveKpis(orders: Order[], inventory: InventoryItem[]): DashboardSnapshot["kpis"] {
-  const deliveryCount = orders.filter((order) => order.fulfillmentMethod === "delivery").length;
   const pickupCount = orders.filter((order) => order.fulfillmentMethod === "pickup").length;
   const totalRevenueCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
   const lowStockCount = inventory.filter((item) => item.status === "Low" || item.status === "Out").length;
@@ -294,7 +293,7 @@ function deriveKpis(orders: Order[], inventory: InventoryItem[]): DashboardSnaps
     {
       label: "Today's Orders",
       value: String(orders.length),
-      delta: `${deliveryCount} delivery · ${pickupCount} pickup`,
+      delta: `${pickupCount} next-day pickup`,
       tone: "gold",
     },
     {

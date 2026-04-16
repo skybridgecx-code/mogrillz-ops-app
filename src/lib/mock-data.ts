@@ -329,7 +329,7 @@ const customers: Customer[] = [
     totalOrders: 6,
     lifetimeValueCents: 24400,
     loyaltyTier: "High",
-    notes: "Prefers extra herb chutney and earlier delivery windows.",
+    notes: "Prefers extra herb chutney and earlier pickup windows.",
     lastOrderAt: now,
   },
   {
