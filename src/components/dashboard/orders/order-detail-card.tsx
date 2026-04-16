@@ -13,11 +13,17 @@ function shortOrderNumber(orderNumber: string) {
 function getCustomerRequestCopy(order: Order) {
   const request = order.customRequest?.trim();
   if (!request) return "No customer request on this order.";
-  if (order.fulfillmentMethod !== "pickup") return request;
-
   return request
-    .replace(/^delivery\s*:\s*/i, "Pickup request: ")
-    .replace(/delivery timing confirmed after checkout/gi, "Pickup details confirmed after checkout");
+    .replace(/^delivery\s*:\s*/i, "Pickup request: ");
+}
+
+function getServiceWindowCopy(order: Order) {
+  const normalized = (order.serviceWindow || "")
+    .replace(/delivery timing confirmed after checkout/gi, "Pickup details confirmed after checkout")
+    .replace(/delivery details confirmed after checkout/gi, "Pickup details confirmed after checkout")
+    .replace(/^delivery\s*:\s*/i, "Pickup: ");
+
+  return normalized.trim() || "Pickup details confirmed after checkout";
 }
 
 interface OrderDetailCardProps {
@@ -95,9 +101,7 @@ export function OrderDetailCard({
           <div className="detail-hero">
             <h3>{selectedOrder.status}</h3>
             <p>
-              {selectedOrder.fulfillmentMethod === "pickup"
-                ? `Pickup. ${selectedOrder.serviceWindow}. Total ${formatCurrency(selectedOrder.totalCents)}.`
-                : `Delivery. ${selectedOrder.serviceWindow}. Zone: ${selectedOrder.customerZone}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
+              {`Pickup. ${getServiceWindowCopy(selectedOrder)}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
             </p>
           </div>
           <div className="detail-note">

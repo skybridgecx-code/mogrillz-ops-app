@@ -64,7 +64,7 @@ function normalizeDeliveryWindow(value: unknown, fulfillmentMethod: Order["fulfi
   const fallback =
     fulfillmentMethod === "pickup"
       ? "Pickup details confirmed after checkout"
-      : "Delivery details confirmed after checkout";
+      : "Pickup details confirmed after checkout";
 
   if (!raw) return fallback;
 
