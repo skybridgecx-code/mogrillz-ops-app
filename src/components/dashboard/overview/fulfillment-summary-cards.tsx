@@ -12,9 +12,9 @@ export function FulfillmentSummaryCards({
   return (
     <>
       <article className="card kpi-card">
-        <div className="kpi-label">Delivery Orders</div>
+        <div className="kpi-label">Pickup Orders</div>
         <div className="kpi-value">{fulfillmentSummary.deliveryCount}</div>
-        <div className="kpi-delta">{formatCurrency(fulfillmentSummary.deliveryRevenue)} in delivery revenue</div>
+        <div className="kpi-delta">{formatCurrency(fulfillmentSummary.deliveryRevenue)} in pickup revenue</div>
       </article>
       <article className="card kpi-card">
         <div className="kpi-label">Pickup Orders</div>

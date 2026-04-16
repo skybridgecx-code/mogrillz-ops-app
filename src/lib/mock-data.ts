@@ -402,10 +402,10 @@ export const mockDashboardSnapshot: DashboardSnapshot = {
     serviceWindow: "Pickup details confirmed after checkout",
   },
   kpis: [
-    { label: "Today's Orders", value: "37", delta: "0 delivery · 37 pickup", tone: "gold" },
+    { label: "Today's Orders", value: "37", delta: "37 next-day pickup", tone: "gold" },
     { label: "Revenue To Date", value: "$1,842", delta: "37 paid synced orders", tone: "green" },
     { label: "Low Stock Items", value: "4", delta: "Needs attention before prep", tone: "red" },
-    { label: "Prep Confidence", value: "91%", delta: "AI-guided forecast", tone: "blue" },
+    { label: "Prep Confidence", value: "91%", delta: "Operator review", tone: "blue" },
   ],
   orders,
   inventory,

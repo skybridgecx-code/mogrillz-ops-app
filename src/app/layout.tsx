@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MoGrillz Ops",
-  description: "Overview-first operator dashboard for MoGrillz inventory, orders, analytics, and AI guidance.",
+  title: "Shama’s Kitchen Ops",
+  description: "Overview-first operator dashboard for Shama’s Kitchen inventory, orders, analytics, and AI guidance.",
 };
 
 export default function RootLayout({

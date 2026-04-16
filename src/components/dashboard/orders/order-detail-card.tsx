@@ -4,6 +4,12 @@ import { useRouter } from "next/navigation";
 import { getNextOrderStatus, getOrderStatusActionLabel } from "@/lib/dashboard/order-status";
 import type { Order } from "@/types/domain";
 
+function shortOrderNumber(orderNumber: string) {
+  const value = orderNumber.toUpperCase();
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
 interface OrderDetailCardProps {
   selectedOrder: Order | null;
   onOpenInventory: () => void;
@@ -70,7 +76,7 @@ export function OrderDetailCard({
       <div className="card-head">
         <div>
           <p className="card-kicker">Selected Order</p>
-          <h2 className="card-title">{selectedOrder ? `${selectedOrder.orderNumber.toUpperCase()} · ${selectedOrder.customerName}` : "No order selected"}</h2>
+          <h2 className="card-title">{selectedOrder ? `${shortOrderNumber(selectedOrder.orderNumber)} · ${selectedOrder.customerName}` : "No order selected"}</h2>
         </div>
       </div>
 
@@ -81,7 +87,7 @@ export function OrderDetailCard({
             <p>
               {selectedOrder.fulfillmentMethod === "pickup"
                 ? `Pickup. ${selectedOrder.serviceWindow}. Total ${formatCurrency(selectedOrder.totalCents)}.`
-                : `Delivery. ${selectedOrder.serviceWindow}. Zone: ${selectedOrder.customerZone}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
+                : `Pickup. ${selectedOrder.serviceWindow}. Zone: ${selectedOrder.customerZone}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
             </p>
           </div>
           <div className="detail-note">

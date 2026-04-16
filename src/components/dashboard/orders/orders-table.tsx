@@ -1,5 +1,11 @@
 import type { Order } from "@/types/domain";
 
+function shortOrderNumber(orderNumber: string) {
+  const value = orderNumber.toUpperCase();
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
 interface OrdersTableProps {
   orders: Order[];
   selectedOrderId: string;
@@ -37,7 +43,7 @@ export function OrdersTable({
             >
               <td>
                 <div className="row-name">
-                  <strong>{order.orderNumber.toUpperCase()}</strong>
+                  <strong title={order.orderNumber.toUpperCase()}>{shortOrderNumber(order.orderNumber)}</strong>
                   <span className="row-subtle">{order.paymentProvider} checkout</span>
                 </div>
               </td>
@@ -49,7 +55,7 @@ export function OrdersTable({
               </td>
               <td>{order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}</td>
               <td>
-                <div>{order.fulfillmentMethod === "pickup" ? "Pickup" : "Delivery"}</div>
+                <div>{order.fulfillmentMethod === "pickup" ? "Next-day pickup" : "Pickup"}</div>
                 <span className="row-subtle">{order.serviceWindow}</span>
               </td>
               <td><span className={`status-pill ${statusTone(order.status)}`}>{order.status}</span></td>

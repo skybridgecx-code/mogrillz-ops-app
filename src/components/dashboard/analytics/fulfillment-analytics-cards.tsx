@@ -15,11 +15,11 @@ export function FulfillmentAnalyticsCards({
         <div className="card-head">
           <div>
             <p className="card-kicker">Fulfillment Mix</p>
-            <h2 className="card-title">Delivery Orders</h2>
+            <h2 className="card-title">Pickup Orders</h2>
           </div>
         </div>
         <div className="kpi-value">{fulfillmentSummary.deliveryCount}</div>
-        <div className="stack-item-meta">{formatCurrency(fulfillmentSummary.deliveryRevenue)} in delivery revenue</div>
+        <div className="stack-item-meta">{formatCurrency(fulfillmentSummary.deliveryRevenue)} in pickup revenue</div>
       </article>
 
       <article className="card">

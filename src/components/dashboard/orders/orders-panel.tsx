@@ -79,7 +79,7 @@ export function OrdersPanel({
             }}
           >
             <span>{filteredOrders.length} matching orders</span>
-            <span>Showing {fulfillmentFilter === "all" ? "delivery + pickup" : fulfillmentFilter}</span>
+            <span>Showing {fulfillmentFilter === "all" ? "pickup orders" : fulfillmentFilter}</span>
           </div>
 
           {filteredOrders.length ? (

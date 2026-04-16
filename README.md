@@ -1,6 +1,6 @@
-# MoGrillz Ops
+# Shama’s Kitchen Ops
 
-MoGrillz Ops is the private admin app for the MoGrillz always-open, pickup-first business. It opens to an operations-first dashboard and expands into orders, inventory, menu controls, customers, analytics, and AI insights.
+Shama’s Kitchen Ops is the private admin app for the Shama’s Kitchen always-open, pickup-first business. It opens to an operations-first dashboard and expands into orders, inventory, menu controls, customers, analytics, and AI insights.
 
 ## Setup
 

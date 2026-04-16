@@ -56,7 +56,7 @@ export function LoginForm({ authReady }: LoginFormProps) {
       }
 
       if (!browserClientReady) {
-        throw new Error("Configure Supabase auth env vars before signing in to MoGrillz Ops.");
+        throw new Error("Configure Supabase auth env vars before signing in to Shama’s Kitchen Ops.");
       }
 
       const supabase = createSupabaseBrowserClient();
@@ -73,7 +73,7 @@ export function LoginForm({ authReady }: LoginFormProps) {
         throw new Error(error.message);
       }
 
-      setSuccessMessage("Signed in. Redirecting to MoGrillz Ops...");
+      setSuccessMessage("Signed in. Redirecting to Shama’s Kitchen Ops...");
       router.replace(readNextRoute());
       router.refresh();
     } catch (error) {
@@ -88,7 +88,7 @@ export function LoginForm({ authReady }: LoginFormProps) {
       <section className={styles.card}>
         <div className={styles.brandRow}>
           <div>
-            <p className={styles.kicker}>MoGrillz Ops</p>
+            <p className={styles.kicker}>Shama’s Kitchen Ops</p>
             <h1 className={styles.title}>Protected Access</h1>
           </div>
           <div className={styles.badge}>{browserClientReady ? "Supabase Ready" : "Setup Required"}</div>
@@ -173,7 +173,7 @@ export function LoginForm({ authReady }: LoginFormProps) {
           <Link className={styles.link} href="/">
             Back to dashboard
           </Link>
-          <a className={styles.link} href="mailto:mogrillzva@gmail.com?subject=MoGrillz%20Ops%20Access">
+          <a className={styles.link} href="mailto:shamaskitchenva@gmail.com?subject=Shama’s Kitchen%20Ops%20Access">
             Need access?
           </a>
         </div>

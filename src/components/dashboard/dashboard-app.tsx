@@ -32,7 +32,7 @@ type MenuEditorState = {
 const sectionMeta: Record<ViewKey, { title: string; copy: string }> = {
   overview: {
     title: "Overview",
-    copy: "Open-order operations, menu health, stock pressure, and the next operator move.",
+    copy: "Next-day pickup orders, menu health, prep pressure, and the next operator move.",
   },
   orders: {
     title: "Orders",
@@ -456,19 +456,19 @@ export function DashboardApp({
     if (!activeUpdateEmails.length || typeof window === "undefined") return;
 
     const body = [
-      "You asked to hear about the latest MoGrillz menu updates.",
+      "You asked to hear about the latest Shama’s Kitchen menu updates.",
       "",
       "We will send new menu highlights, service updates, and larger-order notes here.",
       "",
       "Reply if you need pickup timing help or want to place a larger order.",
       "",
       "Chef Mo",
-      "MoGrillz",
+      "Shama’s Kitchen",
     ].join("\n");
 
     const mailto = new URL("mailto:");
     mailto.searchParams.set("bcc", activeUpdateEmails.join(","));
-    mailto.searchParams.set("subject", "MoGrillz Menu Update");
+    mailto.searchParams.set("subject", "Shama’s Kitchen Menu Update");
     mailto.searchParams.set("body", body);
     window.location.href = mailto.toString();
   }
@@ -1067,7 +1067,7 @@ export function DashboardApp({
                   <div className="stack-item-title">Website Concierge</div>
                   <span className="status-pill success">Live now</span>
                 </div>
-                <div className="stack-item-copy">Public FAQ assistant on the MoGrillz site.</div>
+                <div className="stack-item-copy">Public site assistant for Shama’s Kitchen.</div>
               </div>
               <div className="stack-item">
                 <div className="stack-item-head">
@@ -1122,7 +1122,7 @@ export function DashboardApp({
       <main className="workspace">
         <header className="topbar">
           <div>
-            <div className="topbar-kicker">MoGrillz Ops</div>
+            <div className="topbar-kicker">Shama’s Kitchen Ops</div>
             <h1 className="topbar-title">{currentSection.title}</h1>
             <p className="topbar-copy">{currentSection.copy}</p>
           </div>
