@@ -669,9 +669,30 @@ button {
   box-shadow: inset 3px 0 0 rgba(122, 174, 247, 0.64);
 }
 
+.ops-table.ops-table-orders tbody tr.is-due-today td {
+  background: rgba(210, 122, 98, 0.07);
+  box-shadow: inset 3px 0 0 rgba(210, 122, 98, 0.62);
+}
+
+.ops-table.ops-table-orders tbody tr.is-due-tomorrow td {
+  background: rgba(232, 184, 75, 0.07);
+  box-shadow: inset 3px 0 0 rgba(232, 184, 75, 0.52);
+}
+
+.ops-table.ops-table-orders tbody tr.is-inactive td {
+  opacity: 0.66;
+}
+
 .ops-table.ops-table-orders tbody tr.is-newest.is-selected td,
-.ops-table.ops-table-orders tbody tr.is-pending.is-selected td {
+.ops-table.ops-table-orders tbody tr.is-pending.is-selected td,
+.ops-table.ops-table-orders tbody tr.is-due-today.is-selected td,
+.ops-table.ops-table-orders tbody tr.is-due-tomorrow.is-selected td {
   background: rgba(232, 184, 75, 0.1);
+}
+
+.ops-table.ops-table-orders tbody tr.is-inactive.is-selected td,
+.ops-table.ops-table-orders tbody tr.is-inactive:hover td {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .row-name {
@@ -720,6 +741,18 @@ button {
   border-color: rgba(122, 174, 247, 0.4);
   color: #b8d1ff;
   background: rgba(122, 174, 247, 0.14);
+}
+
+.queue-flag-due-today {
+  border-color: rgba(210, 122, 98, 0.48);
+  color: #ffd4c7;
+  background: rgba(210, 122, 98, 0.16);
+}
+
+.queue-flag-due-tomorrow {
+  border-color: rgba(232, 184, 75, 0.4);
+  color: #ffe2a2;
+  background: rgba(232, 184, 75, 0.16);
 }
 
 .detail-hero {

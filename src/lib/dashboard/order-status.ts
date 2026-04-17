@@ -16,6 +16,47 @@ const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   Cancelled: "Cancelled",
 };
 
+export type PickupTimingBucket = "today" | "tomorrow" | "future" | "unavailable";
+
+function startOfDayTimestamp(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+}
+
+export function getPickupTimingBucket(
+  serviceDate: string | null,
+  referenceDate = new Date(),
+): PickupTimingBucket {
+  if (!serviceDate) return "unavailable";
+
+  const parsedServiceDate = new Date(`${serviceDate}T12:00:00`);
+  if (!Number.isFinite(parsedServiceDate.getTime())) return "unavailable";
+
+  const serviceDateTs = startOfDayTimestamp(parsedServiceDate);
+  const todayTs = startOfDayTimestamp(referenceDate);
+  const tomorrowTs = todayTs + 24 * 60 * 60 * 1000;
+
+  if (serviceDateTs <= todayTs) return "today";
+  if (serviceDateTs === tomorrowTs) return "tomorrow";
+  return "future";
+}
+
+export function getPickupTimingLabel(serviceDate: string | null, referenceDate = new Date()) {
+  const bucket = getPickupTimingBucket(serviceDate, referenceDate);
+
+  switch (bucket) {
+    case "today":
+      return "Today";
+    case "tomorrow":
+      return "Tomorrow";
+    case "future":
+      return "Future pickup";
+    case "unavailable":
+      return "Date unavailable";
+    default:
+      return "Date unavailable";
+  }
+}
+
 export function normalizeOrderStatus(value: unknown): OrderStatus | null {
   if (typeof value !== "string") return null;
 

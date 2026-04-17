@@ -1,5 +1,5 @@
 import type { Order } from "@/types/domain";
-import { getOrderStatusDisplayLabel } from "@/lib/dashboard/order-status";
+import { getOrderStatusDisplayLabel, getPickupTimingBucket, getPickupTimingLabel } from "@/lib/dashboard/order-status";
 
 function shortOrderNumber(orderNumber: string) {
   const value = orderNumber.toUpperCase();
@@ -13,6 +13,10 @@ function getFulfillmentLabel() {
 
 function isPendingOrder(order: Order) {
   return order.status === "New" || order.status === "In Prep" || order.status === "Ready";
+}
+
+function isInactiveOrder(order: Order) {
+  return order.status === "Picked Up" || order.status === "Cancelled";
 }
 
 function getFulfillmentWindowCopy(order: Order) {
@@ -89,54 +93,71 @@ export function OrdersTable({
           </tr>
         </thead>
         <tbody>
-          {orders.map((order) => (
-            <tr
-              className={[
-                order.id === selectedOrderId ? "is-selected" : "",
-                isPendingOrder(order) ? "is-pending" : "",
-                order.id === newestOrderId ? "is-newest" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              key={order.id}
-              onClick={() => onSelectOrder(order.id)}
-            >
-              <td>
-                <div className="row-name">
-                  <strong title={order.orderNumber.toUpperCase()}>{shortOrderNumber(order.orderNumber)}</strong>
-                  <span className="row-subtle row-subtle-stack">
-                    <span>{order.paymentProvider} checkout</span>
-                    <span className="queue-flag-row">
-                      {order.id === newestOrderId ? <span className="queue-flag queue-flag-new">Newest</span> : null}
-                      {isPendingOrder(order) ? <span className="queue-flag queue-flag-pending">Pending</span> : null}
+          {orders.map((order) => {
+            const pending = isPendingOrder(order);
+            const inactive = isInactiveOrder(order);
+            const pickupTimingBucket = getPickupTimingBucket(order.serviceDate);
+            const pickupTimingLabel = getPickupTimingLabel(order.serviceDate);
+            const dueToday = pending && pickupTimingBucket === "today";
+            const dueTomorrow = pending && pickupTimingBucket === "tomorrow";
+
+            return (
+              <tr
+                className={[
+                  order.id === selectedOrderId ? "is-selected" : "",
+                  pending ? "is-pending" : "",
+                  order.id === newestOrderId ? "is-newest" : "",
+                  dueToday ? "is-due-today" : "",
+                  dueTomorrow ? "is-due-tomorrow" : "",
+                  inactive ? "is-inactive" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                key={order.id}
+                onClick={() => onSelectOrder(order.id)}
+              >
+                <td>
+                  <div className="row-name">
+                    <strong title={order.orderNumber.toUpperCase()}>{shortOrderNumber(order.orderNumber)}</strong>
+                    <span className="row-subtle row-subtle-stack">
+                      <span>{order.paymentProvider} checkout</span>
+                      <span className="queue-flag-row">
+                        {order.id === newestOrderId ? <span className="queue-flag queue-flag-new">Newest</span> : null}
+                        {pending ? <span className="queue-flag queue-flag-pending">Pending</span> : null}
+                        {dueToday ? <span className="queue-flag queue-flag-due-today">Due today</span> : null}
+                        {dueTomorrow ? <span className="queue-flag queue-flag-due-tomorrow">Due tomorrow</span> : null}
+                      </span>
                     </span>
+                  </div>
+                </td>
+                <td>
+                  <div className="row-name">
+                    <strong>{order.customerName}</strong>
+                    <span className="row-subtle">{order.customerEmail || order.customerZone}</span>
+                  </div>
+                </td>
+                <td>
+                  <span title={order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}>
+                    {formatOrderItemsForRow(order)}
                   </span>
-                </div>
-              </td>
-              <td>
-                <div className="row-name">
-                  <strong>{order.customerName}</strong>
-                  <span className="row-subtle">{order.customerEmail || order.customerZone}</span>
-                </div>
-              </td>
-              <td>
-                <span title={order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}>
-                  {formatOrderItemsForRow(order)}
-                </span>
-              </td>
-              <td>
-                <div>{getFulfillmentLabel()}</div>
-                <span className="row-subtle">{getFulfillmentWindowCopy(order)}</span>
-              </td>
-              <td>
-                <div className="row-name">
-                  <span className={`status-pill ${statusTone(order.status)}`}>{getOrderStatusDisplayLabel(order.status)}</span>
-                  <span className="row-subtle">{getQueueStatusCopy(order.status)}</span>
-                </div>
-              </td>
-              <td>{formatCurrency(order.totalCents)}</td>
-            </tr>
-          ))}
+                </td>
+                <td>
+                  <div>{getFulfillmentLabel()}</div>
+                  <span className="row-subtle row-subtle-stack">
+                    <span>{pickupTimingLabel}</span>
+                    <span>{getFulfillmentWindowCopy(order)}</span>
+                  </span>
+                </td>
+                <td>
+                  <div className="row-name">
+                    <span className={`status-pill ${statusTone(order.status)}`}>{getOrderStatusDisplayLabel(order.status)}</span>
+                    <span className="row-subtle">{getQueueStatusCopy(order.status)}</span>
+                  </div>
+                </td>
+                <td>{formatCurrency(order.totalCents)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

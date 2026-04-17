@@ -4,6 +4,7 @@ import { FulfillmentFilter, OrderFilter, OrderFilters } from "@/components/dashb
 import { OrderDetailCard } from "@/components/dashboard/orders/order-detail-card";
 import { OrdersEmptyState } from "@/components/dashboard/orders/orders-empty-state";
 import { OrdersTable } from "@/components/dashboard/orders/orders-table";
+import { getPickupTimingBucket } from "@/lib/dashboard/order-status";
 
 interface OrdersPanelProps {
   orders: Order[];
@@ -48,9 +49,12 @@ export function OrdersPanel({
   formatCurrency,
   statusTone,
 }: OrdersPanelProps) {
-  const pendingCount = filteredOrders.filter(
+  const activeOrders = filteredOrders.filter(
     (order) => order.status === "New" || order.status === "In Prep" || order.status === "Ready",
-  ).length;
+  );
+  const pendingCount = activeOrders.length;
+  const dueTodayCount = activeOrders.filter((order) => getPickupTimingBucket(order.serviceDate) === "today").length;
+  const dueTomorrowCount = activeOrders.filter((order) => getPickupTimingBucket(order.serviceDate) === "tomorrow").length;
 
   return (
     <section className="view-panel active">
@@ -82,7 +86,9 @@ export function OrdersPanel({
               fontSize: "0.84rem",
             }}
           >
-            <span>{filteredOrders.length} matching orders · {pendingCount} pending pickup</span>
+            <span>
+              {filteredOrders.length} matching orders · {pendingCount} pending pickup · {dueTodayCount} due today · {dueTomorrowCount} due tomorrow
+            </span>
             <span>Showing {fulfillmentFilter === "all" ? "next-day pickup orders" : fulfillmentFilter}</span>
           </div>
 

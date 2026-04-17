@@ -6,6 +6,7 @@ import {
   getNextOrderStatus,
   getOrderStatusActionLabel,
   getOrderStatusDisplayLabel,
+  getPickupTimingLabel,
   isRiskyOrderStatusTransition,
 } from "@/lib/dashboard/order-status";
 import type { Order } from "@/types/domain";
@@ -151,6 +152,7 @@ export function OrderDetailCard({
   const router = useRouter();
   const nextStatus = selectedOrder ? getNextOrderStatus(selectedOrder.status) : null;
   const nextActionLabel = selectedOrder ? getOrderStatusActionLabel(selectedOrder.status) : null;
+  const pickupTimingLabel = selectedOrder ? getPickupTimingLabel(selectedOrder.serviceDate) : "Date unavailable";
   const [noteDraft, setNoteDraft] = useState(selectedOrder?.operatorNote ?? "");
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteSaving, setNoteSaving] = useState(false);
@@ -219,7 +221,7 @@ export function OrderDetailCard({
           <div className="detail-hero">
             <h3>{getOrderStatusDisplayLabel(selectedOrder.status)}</h3>
             <p>
-              {`Next-day pickup order. ${getServiceWindowCopy(selectedOrder)}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
+              {`Next-day pickup order (${pickupTimingLabel}). ${getServiceWindowCopy(selectedOrder)}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
             </p>
           </div>
           <div className="detail-list">
@@ -234,6 +236,10 @@ export function OrderDetailCard({
             <div className="detail-list-item">
               <span>Pickup date</span>
               <strong>{formatServiceDate(selectedOrder.serviceDate)}</strong>
+            </div>
+            <div className="detail-list-item">
+              <span>Pickup timing</span>
+              <strong>{pickupTimingLabel}</strong>
             </div>
             <div className="detail-list-item">
               <span>Queue entered</span>
