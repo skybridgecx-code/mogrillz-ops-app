@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getNextOrderStatus, getOrderStatusActionLabel, getOrderStatusDisplayLabel } from "@/lib/dashboard/order-status";
+import {
+  canCancelOrderStatus,
+  getNextOrderStatus,
+  getOrderStatusActionLabel,
+  getOrderStatusDisplayLabel,
+  isRiskyOrderStatusTransition,
+} from "@/lib/dashboard/order-status";
 import type { Order } from "@/types/domain";
 
 function shortOrderNumber(orderNumber: string) {
@@ -64,6 +70,31 @@ function getNextStepSupportCopy(status: Order["status"]) {
     default:
       return "Advance when the next pickup step is complete.";
   }
+}
+
+function buildRiskyTransitionConfirmationCopy(order: Order, targetStatus: Order["status"]) {
+  const targetLabel = getOrderStatusDisplayLabel(targetStatus);
+  const context = [
+    `Order: ${order.orderNumber.toUpperCase()}`,
+    `Customer: ${order.customerName}`,
+    `Contact: ${order.customerEmail || "No email captured"}`,
+    `Current status: ${getOrderStatusDisplayLabel(order.status)}`,
+    `Change to: ${targetLabel}`,
+  ];
+
+  if (targetStatus === "Picked Up") {
+    return [
+      "Confirm pickup handoff before marking this order completed.",
+      "",
+      ...context,
+    ].join("\n");
+  }
+
+  return [
+    "Cancel this pickup order only if the customer cannot collect it.",
+    "",
+    ...context,
+  ].join("\n");
 }
 
 const ORDER_WORKFLOW: Array<{
@@ -157,6 +188,19 @@ export function OrderDetailCard({
     } finally {
       setNoteSaving(false);
     }
+  }
+
+  async function handleStatusTransitionRequest(targetStatus: Order["status"]) {
+    if (!selectedOrder) return;
+
+    if (isRiskyOrderStatusTransition(selectedOrder.status, targetStatus)) {
+      const confirmed = window.confirm(
+        buildRiskyTransitionConfirmationCopy(selectedOrder, targetStatus),
+      );
+      if (!confirmed) return;
+    }
+
+    await onAdvanceStatus(selectedOrder.id, targetStatus);
   }
 
   return (
@@ -261,10 +305,25 @@ export function OrderDetailCard({
               <button
                 className="topbar-action"
                 disabled={statusUpdating}
-                onClick={() => onAdvanceStatus(selectedOrder.id, nextStatus)}
+                onClick={() => {
+                  void handleStatusTransitionRequest(nextStatus);
+                }}
                 type="button"
               >
                 {statusUpdating ? "Updating..." : nextActionLabel}
+              </button>
+            ) : null}
+            {selectedOrder && canCancelOrderStatus(selectedOrder.status) ? (
+              <button
+                className="ghost-button"
+                disabled={statusUpdating}
+                onClick={() => {
+                  void handleStatusTransitionRequest("Cancelled");
+                }}
+                style={{ color: "#D27A62", borderColor: "rgba(210,122,98,0.5)" }}
+                type="button"
+              >
+                Cancel order
               </button>
             ) : null}
             <button className="topbar-action" onClick={onOpenInventory} type="button">Check stock</button>

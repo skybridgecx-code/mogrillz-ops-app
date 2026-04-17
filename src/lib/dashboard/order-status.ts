@@ -6,6 +6,8 @@ const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   Ready: "Picked Up",
 };
 
+const CANCELLABLE_ORDER_STATUSES: ReadonlySet<OrderStatus> = new Set(["New", "In Prep", "Ready"]);
+
 const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   New: "New Request",
   "In Prep": "In Prep",
@@ -43,6 +45,28 @@ export function isValidForwardOrderStatusTransition(
   nextStatus: OrderStatus,
 ) {
   return getNextOrderStatus(currentStatus) === nextStatus;
+}
+
+export function canCancelOrderStatus(status: OrderStatus) {
+  return CANCELLABLE_ORDER_STATUSES.has(status);
+}
+
+export function isRiskyOrderStatusTransition(
+  currentStatus: OrderStatus,
+  nextStatus: OrderStatus,
+) {
+  if (nextStatus === "Picked Up") return true;
+  if (nextStatus === "Cancelled" && canCancelOrderStatus(currentStatus)) return true;
+  return false;
+}
+
+export function isValidOrderStatusTransition(
+  currentStatus: OrderStatus,
+  nextStatus: OrderStatus,
+) {
+  if (isValidForwardOrderStatusTransition(currentStatus, nextStatus)) return true;
+  if (nextStatus === "Cancelled" && canCancelOrderStatus(currentStatus)) return true;
+  return false;
 }
 
 export function getOrderStatusDisplayLabel(status: OrderStatus): string {

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 import {
+  canCancelOrderStatus,
   getNextOrderStatus,
-  isValidForwardOrderStatusTransition,
+  isValidOrderStatusTransition,
   normalizeOrderStatus,
 } from "@/lib/dashboard/order-status";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -77,11 +78,16 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const nextAllowedStatus = getNextOrderStatus(currentStatus);
-  if (!nextAllowedStatus || !isValidForwardOrderStatusTransition(currentStatus, requestedStatus)) {
+  const canCancel = canCancelOrderStatus(currentStatus);
+  if (!isValidOrderStatusTransition(currentStatus, requestedStatus)) {
+    const allowedTransitions = [
+      nextAllowedStatus ? `${currentStatus} -> ${nextAllowedStatus}` : null,
+      canCancel ? `${currentStatus} -> Cancelled` : null,
+    ].filter(Boolean);
     return NextResponse.json(
       {
-        error: nextAllowedStatus
-          ? `Only ${currentStatus} -> ${nextAllowedStatus} is allowed.`
+        error: allowedTransitions.length
+          ? `Only ${allowedTransitions.join(" or ")} is allowed.`
           : "No further status transition is allowed.",
       },
       { status: 400 },

@@ -8,7 +8,7 @@ import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
 import { FulfillmentSummaryCards } from "@/components/dashboard/overview/fulfillment-summary-cards";
 import { OverviewKpiGrid } from "@/components/dashboard/overview/overview-kpi-grid";
 import { getFulfillmentSummary } from "@/lib/dashboard/fulfillment-summary";
-import { getNextOrderStatus } from "@/lib/dashboard/order-status";
+import { isValidOrderStatusTransition } from "@/lib/dashboard/order-status";
 import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orders/order-filters";
 import type { DashboardSnapshot, EmailUpdate, InventoryItem, MenuItem, Order } from "@/types/domain";
 
@@ -360,8 +360,7 @@ export function DashboardApp({
       return;
     }
 
-    const expectedNextStatus = getNextOrderStatus(currentOrder.status);
-    if (!expectedNextStatus || expectedNextStatus !== nextStatus) {
+    if (!isValidOrderStatusTransition(currentOrder.status, nextStatus)) {
       setStatusError("That status change is no longer available.");
       return;
     }
