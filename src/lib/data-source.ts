@@ -86,6 +86,67 @@ function normalizeDeliveryWindow(value: unknown, fulfillmentMethod: Order["fulfi
   return raw;
 }
 
+function normalizeServiceDateValue(value: unknown) {
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (!raw) return null;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const datePrefixMatch = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
+    if (datePrefixMatch?.[1]) return datePrefixMatch[1];
+
+    const parsed = new Date(raw);
+    if (Number.isFinite(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = new Date(value);
+    if (Number.isFinite(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+  }
+
+  return null;
+}
+
+function resolveServiceDate(row: Row) {
+  const candidates = [
+    row.service_date,
+    row.serviceDate,
+    row.pickup_date,
+    row.pickupDate,
+    row.fulfillment_date,
+    row.fulfillmentDate,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeServiceDateValue(candidate);
+    if (normalized) return normalized;
+  }
+
+  return null;
+}
+
+function resolveServiceWindow(row: Row) {
+  const candidates = [
+    row.delivery_window,
+    row.service_window,
+    row.serviceWindow,
+    row.pickup_window,
+    row.pickupWindow,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const raw = candidate.trim();
+    if (raw) return raw;
+  }
+
+  return "";
+}
+
 function mapOrderItem(row: Row): OrderItem {
   return {
     id: readString(row.id, crypto.randomUUID()),
@@ -109,10 +170,10 @@ function mapOrder(row: Row): Order {
     customerEmail: typeof row.customer_email === "string" ? row.customer_email : null,
     customerZone: readString(row.zone, "Northern Virginia"),
     status: normalizeOrderStatus(row.status) ?? "New",
-    serviceDate: typeof row.service_date === "string" ? row.service_date : null,
+    serviceDate: resolveServiceDate(row),
     legacyDropDay: typeof row.drop_day === "string" ? capitalizeWords(readString(row.drop_day), "") : null,
     fulfillmentMethod,
-    serviceWindow: normalizeDeliveryWindow(row.delivery_window, fulfillmentMethod),
+    serviceWindow: normalizeDeliveryWindow(resolveServiceWindow(row), fulfillmentMethod),
     totalCents: readNumber(row.total_cents, 0),
     customRequest: typeof row.custom_request === "string" ? row.custom_request : null,
     operatorNote: typeof row.operator_note === "string" ? row.operator_note : null,

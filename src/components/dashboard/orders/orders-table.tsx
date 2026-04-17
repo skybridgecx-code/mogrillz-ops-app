@@ -1,6 +1,8 @@
 import type { Order } from "@/types/domain";
 import { getOrderStatusDisplayLabel, getPickupTimingBucket, getPickupTimingLabel } from "@/lib/dashboard/order-status";
 
+const DEFAULT_PICKUP_WINDOW_COPY = "Pickup details confirmed after checkout";
+
 function shortOrderNumber(orderNumber: string) {
   const value = orderNumber.toUpperCase();
   if (value.length <= 18) return value;
@@ -25,7 +27,7 @@ function getFulfillmentWindowCopy(order: Order) {
     .replace(/delivery details confirmed after checkout/gi, "Pickup details confirmed after checkout")
     .replace(/^delivery\s*:\s*/i, "Pickup: ");
 
-  return normalized.trim() || "Pickup details confirmed after checkout";
+  return normalized.trim() || DEFAULT_PICKUP_WINDOW_COPY;
 }
 
 function getQueueStatusCopy(status: Order["status"]) {
@@ -96,8 +98,13 @@ export function OrdersTable({
           {orders.map((order) => {
             const pending = isPendingOrder(order);
             const inactive = isInactiveOrder(order);
+            const fulfillmentWindowCopy = getFulfillmentWindowCopy(order);
             const pickupTimingBucket = getPickupTimingBucket(order.serviceDate);
             const pickupTimingLabel = getPickupTimingLabel(order.serviceDate);
+            const hasSpecificPickupWindow =
+              fulfillmentWindowCopy.toLowerCase() !== DEFAULT_PICKUP_WINDOW_COPY.toLowerCase();
+            const showPickupTimingLabel =
+              pickupTimingBucket !== "unavailable" || !hasSpecificPickupWindow;
             const dueToday = pending && pickupTimingBucket === "today";
             const dueTomorrow = pending && pickupTimingBucket === "tomorrow";
 
@@ -123,7 +130,6 @@ export function OrdersTable({
                       <span>{order.paymentProvider} checkout</span>
                       <span className="queue-flag-row">
                         {order.id === newestOrderId ? <span className="queue-flag queue-flag-new">Newest</span> : null}
-                        {pending ? <span className="queue-flag queue-flag-pending">Pending</span> : null}
                         {dueToday ? <span className="queue-flag queue-flag-due-today">Due today</span> : null}
                         {dueTomorrow ? <span className="queue-flag queue-flag-due-tomorrow">Due tomorrow</span> : null}
                       </span>
@@ -144,8 +150,8 @@ export function OrdersTable({
                 <td>
                   <div>{getFulfillmentLabel()}</div>
                   <span className="row-subtle row-subtle-stack">
-                    <span>{pickupTimingLabel}</span>
-                    <span>{getFulfillmentWindowCopy(order)}</span>
+                    {showPickupTimingLabel ? <span>{pickupTimingLabel}</span> : null}
+                    <span>{fulfillmentWindowCopy}</span>
                   </span>
                 </td>
                 <td>

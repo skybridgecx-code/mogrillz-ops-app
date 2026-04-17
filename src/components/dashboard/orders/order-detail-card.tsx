@@ -6,10 +6,13 @@ import {
   getNextOrderStatus,
   getOrderStatusActionLabel,
   getOrderStatusDisplayLabel,
+  getPickupTimingBucket,
   getPickupTimingLabel,
   isRiskyOrderStatusTransition,
 } from "@/lib/dashboard/order-status";
 import type { Order } from "@/types/domain";
+
+const DEFAULT_PICKUP_WINDOW_COPY = "Pickup details confirmed after checkout";
 
 function shortOrderNumber(orderNumber: string) {
   const value = orderNumber.toUpperCase();
@@ -30,7 +33,7 @@ function getServiceWindowCopy(order: Order) {
     .replace(/delivery details confirmed after checkout/gi, "Pickup details confirmed after checkout")
     .replace(/^delivery\s*:\s*/i, "Pickup: ");
 
-  return normalized.trim() || "Pickup details confirmed after checkout";
+  return normalized.trim() || DEFAULT_PICKUP_WINDOW_COPY;
 }
 
 function formatOrderDateTime(value: string | null) {
@@ -152,7 +155,21 @@ export function OrderDetailCard({
   const router = useRouter();
   const nextStatus = selectedOrder ? getNextOrderStatus(selectedOrder.status) : null;
   const nextActionLabel = selectedOrder ? getOrderStatusActionLabel(selectedOrder.status) : null;
+  const serviceWindowCopy = selectedOrder ? getServiceWindowCopy(selectedOrder) : DEFAULT_PICKUP_WINDOW_COPY;
+  const pickupTimingBucket = selectedOrder ? getPickupTimingBucket(selectedOrder.serviceDate) : "unavailable";
   const pickupTimingLabel = selectedOrder ? getPickupTimingLabel(selectedOrder.serviceDate) : "Date unavailable";
+  const hasSpecificPickupWindow = serviceWindowCopy.toLowerCase() !== DEFAULT_PICKUP_WINDOW_COPY.toLowerCase();
+  const showUnavailableTimingLabel = pickupTimingBucket !== "unavailable" || !hasSpecificPickupWindow;
+  const pickupTimingSummary = showUnavailableTimingLabel ? pickupTimingLabel : null;
+  const pickupDateValue = selectedOrder?.serviceDate
+    ? formatServiceDate(selectedOrder.serviceDate)
+    : hasSpecificPickupWindow
+      ? "See pickup window"
+      : "Date unavailable";
+  const pickupTimingValue =
+    pickupTimingBucket === "unavailable" && hasSpecificPickupWindow
+      ? serviceWindowCopy
+      : pickupTimingLabel;
   const [noteDraft, setNoteDraft] = useState(selectedOrder?.operatorNote ?? "");
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteSaving, setNoteSaving] = useState(false);
@@ -221,7 +238,7 @@ export function OrderDetailCard({
           <div className="detail-hero">
             <h3>{getOrderStatusDisplayLabel(selectedOrder.status)}</h3>
             <p>
-              {`Next-day pickup order (${pickupTimingLabel}). ${getServiceWindowCopy(selectedOrder)}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
+              {`Next-day pickup order${pickupTimingSummary ? ` (${pickupTimingSummary})` : ""}. ${serviceWindowCopy}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
             </p>
           </div>
           <div className="detail-list">
@@ -235,11 +252,11 @@ export function OrderDetailCard({
             </div>
             <div className="detail-list-item">
               <span>Pickup date</span>
-              <strong>{formatServiceDate(selectedOrder.serviceDate)}</strong>
+              <strong>{pickupDateValue}</strong>
             </div>
             <div className="detail-list-item">
               <span>Pickup timing</span>
-              <strong>{pickupTimingLabel}</strong>
+              <strong>{pickupTimingValue}</strong>
             </div>
             <div className="detail-list-item">
               <span>Queue entered</span>
