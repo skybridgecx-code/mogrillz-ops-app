@@ -3,6 +3,20 @@ import type { Order } from "@/types/domain";
 export type OrderFilter = "all" | "new" | "in prep" | "ready" | "picked up";
 export type FulfillmentFilter = "all" | "delivery" | "pickup";
 
+const ORDER_FILTER_LABEL: Record<OrderFilter, string> = {
+  all: "All",
+  new: "New Request",
+  "in prep": "In Prep",
+  ready: "Ready For Pickup",
+  "picked up": "Completed",
+};
+
+const FULFILLMENT_FILTER_LABEL: Record<FulfillmentFilter, string> = {
+  all: "All",
+  delivery: "Delivery",
+  pickup: "Pickup",
+};
+
 interface OrderFiltersProps {
   orders: Order[];
   orderFilter: OrderFilter;
@@ -41,7 +55,7 @@ export function OrderFilters({
                 onClick={() => onOrderFilterChange(filter)}
                 type="button"
               >
-                {filter} ({count})
+                {ORDER_FILTER_LABEL[filter]} ({count})
               </button>
             );
           })}
@@ -64,7 +78,7 @@ export function OrderFilters({
                 onClick={() => onFulfillmentFilterChange(filter)}
                 type="button"
               >
-                {filter} ({count})
+                {FULFILLMENT_FILTER_LABEL[filter]} ({count})
               </button>
             );
           })}

@@ -652,6 +652,28 @@ button {
   background: rgba(232, 184, 75, 0.08);
 }
 
+.ops-table.ops-table-orders th,
+.ops-table.ops-table-orders td {
+  padding: 11px 12px;
+}
+
+.ops-table.ops-table-orders td {
+  font-size: 13px;
+}
+
+.ops-table.ops-table-orders tbody tr.is-pending td {
+  background: rgba(232, 184, 75, 0.045);
+}
+
+.ops-table.ops-table-orders tbody tr.is-newest td {
+  box-shadow: inset 3px 0 0 rgba(122, 174, 247, 0.64);
+}
+
+.ops-table.ops-table-orders tbody tr.is-newest.is-selected td,
+.ops-table.ops-table-orders tbody tr.is-pending.is-selected td {
+  background: rgba(232, 184, 75, 0.1);
+}
+
 .row-name {
   display: flex;
   flex-direction: column;
@@ -661,6 +683,43 @@ button {
 .row-subtle {
   color: var(--muted);
   font-size: 13px;
+}
+
+.row-subtle-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.queue-flag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.queue-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.queue-flag-pending {
+  border-color: rgba(232, 184, 75, 0.3);
+  color: var(--amber);
+  background: rgba(232, 184, 75, 0.14);
+}
+
+.queue-flag-new {
+  border-color: rgba(122, 174, 247, 0.4);
+  color: #b8d1ff;
+  background: rgba(122, 174, 247, 0.14);
 }
 
 .detail-hero {
@@ -826,6 +885,16 @@ button {
 .timeline-item.done .timeline-dot {
   background: var(--green);
   box-shadow: 0 0 0 4px rgba(99, 201, 142, 0.12);
+}
+
+.timeline-item.current .timeline-dot {
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(232, 184, 75, 0.18);
+}
+
+.timeline-item:not(.done) .timeline-dot {
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.06);
 }
 
 .timeline-copy strong {

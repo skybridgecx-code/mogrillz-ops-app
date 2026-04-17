@@ -36,7 +36,7 @@ const sectionMeta: Record<ViewKey, { title: string; copy: string }> = {
   },
   orders: {
     title: "Orders",
-    copy: "Pickup queue management, customer notes, and service status updates.",
+    copy: "Pickup queue management across New Request, In Prep, Ready For Pickup, and Completed.",
   },
   inventory: {
     title: "Inventory",
@@ -97,13 +97,13 @@ function formatCurrency(cents: number) {
 
 function statusTone(status: string) {
   const normalized = status.toLowerCase();
-  if (normalized.includes("picked up") || normalized.includes("ready") || normalized.includes("healthy") || normalized.includes("live") || normalized.includes("vip") || normalized.includes("active")) {
+  if (normalized.includes("picked up") || normalized.includes("completed") || normalized.includes("healthy") || normalized.includes("live") || normalized.includes("vip") || normalized.includes("active")) {
     return "success";
   }
-  if (normalized.includes("prep") || normalized.includes("watch") || normalized.includes("open") || normalized.includes("rising")) {
+  if (normalized.includes("new") || normalized.includes("prep") || normalized.includes("ready") || normalized.includes("watch") || normalized.includes("open") || normalized.includes("rising")) {
     return "warning";
   }
-  if (normalized.includes("new") || normalized.includes("low") || normalized.includes("out") || normalized.includes("paused") || normalized.includes("cancel")) {
+  if (normalized.includes("low") || normalized.includes("out") || normalized.includes("paused") || normalized.includes("cancel")) {
     return "danger";
   }
   return "";
@@ -207,12 +207,37 @@ export function DashboardApp({
   }, []);
 
   const filteredOrders = useMemo(
-    () =>
-      snapshot.orders.filter((order) => {
+    () => {
+      const statusPriority: Record<Order["status"], number> = {
+        New: 0,
+        "In Prep": 1,
+        Ready: 2,
+        "Picked Up": 3,
+        Cancelled: 4,
+      };
+
+      const toTimestamp = (value: string) => {
+        const parsed = new Date(value);
+        return Number.isFinite(parsed.getTime()) ? parsed.getTime() : 0;
+      };
+
+      return snapshot.orders
+      .filter((order) => {
         const statusMatch = orderFilter === "all" || order.status.toLowerCase() === orderFilter;
         const fulfillmentMatch = fulfillmentFilter === "all" || order.fulfillmentMethod === fulfillmentFilter;
         return statusMatch && fulfillmentMatch;
-      }),
+      })
+      .sort((left, right) => {
+        const statusDelta = (statusPriority[left.status] ?? 99) - (statusPriority[right.status] ?? 99);
+        if (statusDelta !== 0) return statusDelta;
+
+        const serviceDateLeft = left.serviceDate ? toTimestamp(`${left.serviceDate}T00:00:00`) : Number.MAX_SAFE_INTEGER;
+        const serviceDateRight = right.serviceDate ? toTimestamp(`${right.serviceDate}T00:00:00`) : Number.MAX_SAFE_INTEGER;
+        if (serviceDateLeft !== serviceDateRight) return serviceDateLeft - serviceDateRight;
+
+        return toTimestamp(right.createdAt) - toTimestamp(left.createdAt);
+      });
+    },
     [fulfillmentFilter, orderFilter, snapshot.orders],
   );
 

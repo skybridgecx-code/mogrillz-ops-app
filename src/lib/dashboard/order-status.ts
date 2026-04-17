@@ -6,6 +6,14 @@ const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   Ready: "Picked Up",
 };
 
+const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  New: "New Request",
+  "In Prep": "In Prep",
+  Ready: "Ready For Pickup",
+  "Picked Up": "Completed",
+  Cancelled: "Cancelled",
+};
+
 export function normalizeOrderStatus(value: unknown): OrderStatus | null {
   if (typeof value !== "string") return null;
 
@@ -37,7 +45,11 @@ export function isValidForwardOrderStatusTransition(
   return getNextOrderStatus(currentStatus) === nextStatus;
 }
 
+export function getOrderStatusDisplayLabel(status: OrderStatus): string {
+  return ORDER_STATUS_LABEL[status] ?? status;
+}
+
 export function getOrderStatusActionLabel(status: OrderStatus): string | null {
   const nextStatus = getNextOrderStatus(status);
-  return nextStatus ? `Mark ${nextStatus}` : null;
+  return nextStatus ? `Mark ${getOrderStatusDisplayLabel(nextStatus)}` : null;
 }

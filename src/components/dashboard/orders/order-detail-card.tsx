@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getNextOrderStatus, getOrderStatusActionLabel } from "@/lib/dashboard/order-status";
+import { getNextOrderStatus, getOrderStatusActionLabel, getOrderStatusDisplayLabel } from "@/lib/dashboard/order-status";
 import type { Order } from "@/types/domain";
 
 function shortOrderNumber(orderNumber: string) {
@@ -25,6 +25,78 @@ function getServiceWindowCopy(order: Order) {
 
   return normalized.trim() || "Pickup details confirmed after checkout";
 }
+
+function formatOrderDateTime(value: string | null) {
+  if (!value) return "Not available";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return "Not available";
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatServiceDate(value: string | null) {
+  if (!value) return "Tomorrow (date pending)";
+  const parsed = new Date(`${value}T12:00:00`);
+  if (!Number.isFinite(parsed.getTime())) return "Tomorrow (date pending)";
+  return parsed.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getNextStepSupportCopy(status: Order["status"]) {
+  switch (status) {
+    case "New":
+      return "Review order notes, confirm item availability, and begin prep.";
+    case "In Prep":
+      return "Finish prep and packaging, then move to ready-for-pickup.";
+    case "Ready":
+      return "Order is staged. Confirm customer handoff when pickup happens.";
+    case "Picked Up":
+      return "Pickup is complete. Add final notes only if needed.";
+    case "Cancelled":
+      return "Order was cancelled. Keep notes for any follow-up context.";
+    default:
+      return "Advance when the next pickup step is complete.";
+  }
+}
+
+const ORDER_WORKFLOW: Array<{
+  status: Order["status"];
+  label: string;
+  copy: string;
+}> = [
+  {
+    status: "New",
+    label: "New Request",
+    copy: "Order synced and waiting for operator review.",
+  },
+  {
+    status: "In Prep",
+    label: "In Prep",
+    copy: "Kitchen is actively preparing this pickup order.",
+  },
+  {
+    status: "Ready",
+    label: "Ready For Pickup",
+    copy: "Order is packed and staged for customer handoff.",
+  },
+  {
+    status: "Picked Up",
+    label: "Completed",
+    copy: "Pickup handoff confirmed.",
+  },
+  {
+    status: "Cancelled",
+    label: "Cancelled",
+    copy: "Order closed without pickup.",
+  },
+];
 
 interface OrderDetailCardProps {
   selectedOrder: Order | null;
@@ -92,17 +164,43 @@ export function OrderDetailCard({
       <div className="card-head">
         <div>
           <p className="card-kicker">Selected Order</p>
-          <h2 className="card-title">{selectedOrder ? `${shortOrderNumber(selectedOrder.orderNumber)} · ${selectedOrder.customerName}` : "No order selected"}</h2>
+          <h2 className="card-title">
+            {selectedOrder ? `${shortOrderNumber(selectedOrder.orderNumber)} · ${selectedOrder.customerName}` : "No order selected"}
+          </h2>
         </div>
       </div>
 
       {selectedOrder ? (
         <div className="detail-panel">
           <div className="detail-hero">
-            <h3>{selectedOrder.status}</h3>
+            <h3>{getOrderStatusDisplayLabel(selectedOrder.status)}</h3>
             <p>
-              {`Pickup. ${getServiceWindowCopy(selectedOrder)}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
+              {`Next-day pickup order. ${getServiceWindowCopy(selectedOrder)}. Total ${formatCurrency(selectedOrder.totalCents)}.`}
             </p>
+          </div>
+          <div className="detail-list">
+            <div className="detail-list-item">
+              <span>Customer</span>
+              <strong>{selectedOrder.customerName}</strong>
+            </div>
+            <div className="detail-list-item">
+              <span>Contact</span>
+              <strong>{selectedOrder.customerEmail || "No email captured"}</strong>
+            </div>
+            <div className="detail-list-item">
+              <span>Pickup date</span>
+              <strong>{formatServiceDate(selectedOrder.serviceDate)}</strong>
+            </div>
+            <div className="detail-list-item">
+              <span>Queue entered</span>
+              <strong>{formatOrderDateTime(selectedOrder.createdAt)}</strong>
+            </div>
+          </div>
+          <div className="detail-note">
+            <strong>Next action</strong>
+            {nextActionLabel
+              ? `${nextActionLabel}. ${getNextStepSupportCopy(selectedOrder.status)}`
+              : getNextStepSupportCopy(selectedOrder.status)}
           </div>
           <div className="detail-note">
             <strong>Customer request</strong>
@@ -110,6 +208,7 @@ export function OrderDetailCard({
           </div>
           <div className="detail-note">
             <strong>Internal operator note</strong>
+            Keep short handoff context for prep timing, pickup coordination, or customer follow-up.
             <textarea
               onChange={(event) => setNoteDraft(event.target.value)}
               placeholder="Add internal context for prep, dispatch, or handoff."
@@ -139,15 +238,23 @@ export function OrderDetailCard({
             ))}
           </div>
           <div className="timeline">
-            {["Placed", "Packed", selectedOrder.status].map((step, index) => (
-              <div className="timeline-item done" key={`${selectedOrder.id}-${step}-${index}`}>
+            {ORDER_WORKFLOW.map((step, index) => {
+              const orderStageIndex = ORDER_WORKFLOW.findIndex((entry) => entry.status === selectedOrder.status);
+              const isDone = index < orderStageIndex;
+              const isCurrent = index === orderStageIndex;
+              return (
+                <div
+                  className={`timeline-item ${isDone || isCurrent ? "done" : ""} ${isCurrent ? "current" : ""}`}
+                  key={`${selectedOrder.id}-${step.status}-${index}`}
+                >
                 <div className="timeline-dot" />
                 <div className="timeline-copy">
-                  <strong>{step}</strong>
-                  <span>{index === 2 ? "Most recent queue state." : "Completed stage in the flow."}</span>
+                  <strong>{step.label}</strong>
+                  <span>{isCurrent ? "Current queue stage." : step.copy}</span>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
           <div className="detail-actions">
             {selectedOrder && nextStatus && nextActionLabel ? (

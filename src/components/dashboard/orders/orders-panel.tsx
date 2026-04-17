@@ -48,6 +48,10 @@ export function OrdersPanel({
   formatCurrency,
   statusTone,
 }: OrdersPanelProps) {
+  const pendingCount = filteredOrders.filter(
+    (order) => order.status === "New" || order.status === "In Prep" || order.status === "Ready",
+  ).length;
+
   return (
     <section className="view-panel active">
       <div className="content-grid">
@@ -55,7 +59,7 @@ export function OrdersPanel({
           <div className="card-head">
             <div>
               <p className="card-kicker">Orders</p>
-              <h2 className="card-title">Live queue</h2>
+              <h2 className="card-title">Next-day pickup queue</h2>
             </div>
             <OrderFilters
               orders={orders}
@@ -75,11 +79,11 @@ export function OrdersPanel({
               gap: "1rem",
               marginBottom: "1rem",
               color: "rgba(255,255,255,0.72)",
-              fontSize: "0.9rem",
+              fontSize: "0.84rem",
             }}
           >
-            <span>{filteredOrders.length} matching orders</span>
-            <span>Showing {fulfillmentFilter === "all" ? "pickup orders" : fulfillmentFilter}</span>
+            <span>{filteredOrders.length} matching orders · {pendingCount} pending pickup</span>
+            <span>Showing {fulfillmentFilter === "all" ? "next-day pickup orders" : fulfillmentFilter}</span>
           </div>
 
           {filteredOrders.length ? (
