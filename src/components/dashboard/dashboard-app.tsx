@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 
 import { FulfillmentAnalyticsCards } from "@/components/dashboard/analytics/fulfillment-analytics-cards";
+import { MenuImageUploader } from "@/components/dashboard/menu/menu-image-uploader";
 import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
 import { FulfillmentSummaryCards } from "@/components/dashboard/overview/fulfillment-summary-cards";
 import { OverviewKpiGrid } from "@/components/dashboard/overview/overview-kpi-grid";
@@ -503,6 +504,7 @@ export function DashboardApp({
     actionLabel: string,
     onSubmit: () => void,
     disabled: boolean,
+    itemId?: string,
   ) {
     return (
       <div className="detail-panel">
@@ -577,14 +579,22 @@ export function DashboardApp({
               value={draft.allocationLimit}
             />
           </label>
-          <label className="detail-note">
-            <strong>Image URL</strong>
-            <input
-              onChange={(event) => onChange("imageUrl", event.target.value)}
-              style={inputStyle}
-              value={draft.imageUrl}
+          {itemId ? (
+            <MenuImageUploader
+              itemId={itemId}
+              currentImageUrl={draft.imageUrl || null}
+              onUploaded={(url) => onChange("imageUrl", url)}
             />
-          </label>
+          ) : (
+            <label className="detail-note">
+              <strong>Image URL</strong>
+              <input
+                onChange={(event) => onChange("imageUrl", event.target.value)}
+                style={inputStyle}
+                value={draft.imageUrl}
+              />
+            </label>
+          )}
         </div>
 
         <label className="detail-note">
@@ -898,7 +908,7 @@ export function DashboardApp({
                 <h2 className="card-title">{selectedMenu?.name ?? "Select a menu item"}</h2>
               </div>
             </div>
-            {selectedMenu ? renderMenuForm(menuDraft, updateMenuDraft, "Save live menu item", () => saveMenuItem(selectedMenu.id), menuSaving) : null}
+            {selectedMenu ? renderMenuForm(menuDraft, updateMenuDraft, "Save live menu item", () => saveMenuItem(selectedMenu.id), menuSaving, selectedMenu.id) : null}
             {selectedMenu ? (
               <div className="detail-note">
                 <strong>Ingredient dependencies</strong>
