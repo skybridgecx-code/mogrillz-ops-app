@@ -16,7 +16,6 @@ type MenuPayload = {
   category: string;
   price_cents: number;
   availability: string;
-  is_active: boolean;
   allocation_limit: number;
   description: string;
   image_url: string | null;
@@ -113,14 +112,12 @@ function readMenuPayload(body: unknown): MenuPayload {
     throw new Error("Slug is required.");
   }
 
-  const availability = readAvailability(data.availability);
   return {
     slug,
     name,
     category: readText(data.category, 60, "Category"),
     price_cents: readInteger(data.priceCents, 0, 100000, "Price"),
-    availability,
-    is_active: availability === "live",
+    availability: readAvailability(data.availability),
     allocation_limit: readInteger(data.allocationLimit, 0, 100, "Allocation limit"),
     description: readText(data.description, 500, "Description"),
     image_url: readOptionalText(data.imageUrl, 500),
