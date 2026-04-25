@@ -16,6 +16,7 @@ type MenuPayload = {
   category: string;
   price_cents: number;
   availability: string;
+  is_active: boolean;
   allocation_limit: number;
   description: string;
   image_url: string | null;
@@ -112,12 +113,14 @@ function readMenuPayload(body: unknown): MenuPayload {
     throw new Error("Slug is required.");
   }
 
+  const availability = readAvailability(data.availability);
   return {
     slug,
     name,
     category: readText(data.category, 60, "Category"),
     price_cents: readInteger(data.priceCents, 0, 100000, "Price"),
-    availability: readAvailability(data.availability),
+    availability,
+    is_active: availability === "live",
     allocation_limit: readInteger(data.allocationLimit, 0, 100, "Allocation limit"),
     description: readText(data.description, 500, "Description"),
     image_url: readOptionalText(data.imageUrl, 500),
@@ -209,6 +212,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     .single();
 
   if (updateResult.error || !updateResult.data) {
+    console.error("[api/menu/[id]] update failed:", updateResult.error);
     return NextResponse.json({ error: "Failed to update menu item." }, { status: 500 });
   }
 
