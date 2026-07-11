@@ -97,6 +97,38 @@ button {
   min-height: 100vh;
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  transition: grid-template-columns 220ms ease;
+}
+
+.dashboard-shell.focus-mode {
+  grid-template-columns: 96px minmax(0, 1fr);
+}
+
+.dashboard-shell.focus-mode .sidebar {
+  padding: 20px 10px;
+}
+
+.dashboard-shell.focus-mode .brand-mark,
+.dashboard-shell.focus-mode .brand-sub,
+.dashboard-shell.focus-mode .nav-link-meta,
+.dashboard-shell.focus-mode .sidebar-footer {
+  display: none;
+}
+
+.dashboard-shell.focus-mode .nav-link {
+  align-items: center;
+  text-align: center;
+  padding: 10px 4px;
+}
+
+.dashboard-shell.focus-mode .nav-link-top {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dashboard-shell.focus-mode .nav-link-label {
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .sidebar {
@@ -201,6 +233,14 @@ button {
   transform: translateX(2px);
 }
 
+.nav-link-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
 .nav-link-label {
   font-size: 14px;
   font-weight: 600;
@@ -213,6 +253,35 @@ button {
 
 .nav-link.active .nav-link-meta {
   color: var(--amber);
+}
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.nav-badge.danger {
+  background: rgba(204, 26, 0, 0.2);
+  color: #ff8a75;
+}
+
+.nav-badge.warning {
+  background: rgba(232, 184, 75, 0.2);
+  color: var(--amber);
+}
+
+.nav-badge.info {
+  background: rgba(122, 174, 247, 0.2);
+  color: var(--blue);
 }
 
 .sidebar-footer {
@@ -260,6 +329,37 @@ button {
   gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--green);
+  animation: livePulse 2.2s infinite;
+}
+
+.live-dot.muted {
+  background: var(--muted-2);
+  animation: none;
+}
+
+@keyframes livePulse {
+  0% { box-shadow: 0 0 0 0 rgba(99, 201, 142, 0.55); }
+  70% { box-shadow: 0 0 0 8px rgba(99, 201, 142, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(99, 201, 142, 0); }
 }
 
 .topbar-pill {

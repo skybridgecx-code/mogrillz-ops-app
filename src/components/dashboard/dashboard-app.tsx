@@ -167,6 +167,8 @@ export function DashboardApp({
   const router = useRouter();
   const snapshot = initialSnapshot ?? EMPTY_SNAPSHOT;
   const [view, setView] = useState<ViewKey>("overview");
+  const [focusMode, setFocusMode] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
   const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentFilter>("all");
   const [selectedOrderId, setSelectedOrderId] = useState(snapshot.orders[0]?.id ?? "");
@@ -206,6 +208,23 @@ export function DashboardApp({
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
   }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (dataSource !== "supabase") return;
+
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        router.refresh();
+      }
+    }, 90000);
+
+    return () => clearInterval(id);
+  }, [dataSource, router]);
 
   const filteredOrders = useMemo(
     () => {
@@ -334,6 +353,35 @@ export function DashboardApp({
         .filter(Boolean),
     [emailUpdateSummary.updates],
   );
+
+  const lastSyncedLabel = useMemo(() => {
+    const generatedAt = new Date(snapshot.generatedAt).getTime();
+    if (!Number.isFinite(generatedAt)) return "just now";
+
+    const diffSeconds = Math.max(0, Math.round((now - generatedAt) / 1000));
+    if (diffSeconds < 45) return "just now";
+
+    const diffMinutes = Math.round(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+    const diffHours = Math.round(diffMinutes / 60);
+    return `${diffHours}h ago`;
+  }, [now, snapshot.generatedAt]);
+
+  const navBadges = useMemo(() => {
+    const activeOrderCount = snapshot.orders.filter(
+      (order) => order.status !== "Picked Up" && order.status !== "Cancelled",
+    ).length;
+
+    const badges: Partial<Record<ViewKey, { count: number; tone: "warning" | "danger" | "info" }>> = {};
+    if (activeOrderCount > 0) badges.orders = { count: activeOrderCount, tone: "warning" };
+    if (lowStockItems.length > 0) badges.inventory = { count: lowStockItems.length, tone: "danger" };
+    if (emailUpdateSummary.recentCount > 0) {
+      badges.customers = { count: emailUpdateSummary.recentCount, tone: "info" };
+    }
+
+    return badges;
+  }, [snapshot.orders, lowStockItems, emailUpdateSummary.recentCount]);
 
   function goTo(nextView: ViewKey) {
     setView(nextView);
@@ -1120,7 +1168,7 @@ export function DashboardApp({
   const currentSection = sectionMeta[view];
 
   return (
-    <div className="dashboard-shell">
+    <div className={`dashboard-shell ${focusMode ? "focus-mode" : ""}`}>
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-kicker">Operator Console</div>
@@ -1132,17 +1180,23 @@ export function DashboardApp({
         </div>
 
         <nav aria-label="Dashboard sections" className="nav-stack">
-          {navItems.map((item) => (
-            <button
-              className={`nav-link ${view === item.key ? "active" : ""}`}
-              key={item.key}
-              onClick={() => goTo(item.key)}
-              type="button"
-            >
-              <span className="nav-link-label">{item.label}</span>
-              <span className="nav-link-meta">{item.meta}</span>
-            </button>
-          ))}
+          {navItems.map((item) => {
+            const badge = navBadges[item.key];
+            return (
+              <button
+                className={`nav-link ${view === item.key ? "active" : ""}`}
+                key={item.key}
+                onClick={() => goTo(item.key)}
+                type="button"
+              >
+                <span className="nav-link-top">
+                  <span className="nav-link-label">{item.label}</span>
+                  {badge ? <span className={`nav-badge ${badge.tone}`}>{badge.count}</span> : null}
+                </span>
+                <span className="nav-link-meta">{item.meta}</span>
+              </button>
+            );
+          })}
         </nav>
 
         <div className="sidebar-footer">
@@ -1162,6 +1216,10 @@ export function DashboardApp({
           </div>
 
           <div className="topbar-rail">
+            <div className="live-indicator">
+              <span className={`live-dot ${dataSource === "mock" ? "muted" : ""}`} />
+              {dataSource === "mock" ? "Mock data" : `Live · synced ${lastSyncedLabel}`}
+            </div>
             <div className="topbar-pill">
               <span className="pill-label">Service Date</span>
               <strong>{snapshot.operations.serviceDateLabel}</strong>
@@ -1170,6 +1228,9 @@ export function DashboardApp({
               <span className="pill-label">Status</span>
               <strong>{snapshot.operations.status}</strong>
             </div>
+            <button className="ghost-button" onClick={() => setFocusMode((current) => !current)} type="button">
+              {focusMode ? "Exit Focus" : "Focus Mode"}
+            </button>
             <button className="topbar-action" onClick={() => goTo("orders")} type="button">
               Open Live Queue
             </button>
