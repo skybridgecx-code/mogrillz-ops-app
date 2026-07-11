@@ -8,7 +8,7 @@ import { MenuImageUploader } from "@/components/dashboard/menu/menu-image-upload
 import { OrdersPanel } from "@/components/dashboard/orders/orders-panel";
 import { FulfillmentSummaryCards } from "@/components/dashboard/overview/fulfillment-summary-cards";
 import { OverviewKpiGrid } from "@/components/dashboard/overview/overview-kpi-grid";
-import { getFulfillmentSummary } from "@/lib/dashboard/fulfillment-summary";
+import { getAverageFulfillmentMinutes, getBestSellers, getRepeatCustomerRate } from "@/lib/dashboard/analytics";
 import { isValidOrderStatusTransition } from "@/lib/dashboard/order-status";
 import type { FulfillmentFilter, OrderFilter } from "@/components/dashboard/orders/order-filters";
 import type { DashboardSnapshot, EmailUpdate, InventoryItem, MenuItem, Order } from "@/types/domain";
@@ -290,7 +290,8 @@ export function DashboardApp({
 
   const orderFilters: OrderFilter[] = ["all", "new", "in prep", "ready", "picked up"];
   const fulfillmentFilters: FulfillmentFilter[] = ["all", "pickup"];
-  const fulfillmentSummary = useMemo(() => getFulfillmentSummary(snapshot.orders), [snapshot.orders]);
+  const repeatCustomerStats = useMemo(() => getRepeatCustomerRate(snapshot.customers), [snapshot.customers]);
+  const fulfillmentSpeedStats = useMemo(() => getAverageFulfillmentMinutes(snapshot.orders), [snapshot.orders]);
   const lowStockItems = useMemo(
     () => snapshot.inventory.filter((item) => item.status === "Low" || item.status === "Out"),
     [snapshot.inventory],
@@ -321,17 +322,7 @@ export function DashboardApp({
     [snapshot.menu],
   );
 
-  const analyticsBars = useMemo(
-    () =>
-      [...snapshot.menu]
-        .sort((a, b) => b.allocationLimit - a.allocationLimit)
-        .map((item) => ({
-          label: item.name,
-          value: item.allocationLimit,
-          meta: formatCurrency(item.priceCents),
-        })),
-    [snapshot.menu],
-  );
+  const bestSellers = useMemo(() => getBestSellers(snapshot.orders), [snapshot.orders]);
 
   const emailUpdateSummary = useMemo(() => {
     const activeCount = snapshot.emailUpdates.filter((update) => update.status === "Active").length;
@@ -703,7 +694,7 @@ export function DashboardApp({
     return (
       <section className="view-panel active">
         <OverviewKpiGrid kpis={snapshot.kpis}>
-          <FulfillmentSummaryCards fulfillmentSummary={fulfillmentSummary} formatCurrency={formatCurrency} />
+          <FulfillmentSummaryCards repeatCustomerStats={repeatCustomerStats} fulfillmentSpeedStats={fulfillmentSpeedStats} />
         </OverviewKpiGrid>
 
         <div className="overview-grid">
@@ -1081,7 +1072,7 @@ export function DashboardApp({
   }
 
   function renderAnalytics() {
-    const maxValue = Math.max(...analyticsBars.map((bar) => bar.value), 1);
+    const maxQuantity = Math.max(...bestSellers.map((bar) => bar.quantity), 1);
 
     return (
       <section className="view-panel active">
@@ -1089,28 +1080,32 @@ export function DashboardApp({
           <article className="card card-span-2">
             <div className="card-head">
               <div>
-                <p className="card-kicker">Revenue Trend</p>
-                <h2 className="card-title">Current menu strength</h2>
+                <p className="card-kicker">Best Sellers</p>
+                <h2 className="card-title">What&apos;s actually selling</h2>
               </div>
               <div className="status-badge">{getOrderVolumeLabel(snapshot)}</div>
             </div>
-            <div className="bars-list">
-              {analyticsBars.map((bar) => (
-                <div className="bar-row" key={bar.label}>
-                  <div className="bar-copy">
-                    <strong>{bar.label}</strong>
-                    <span>{bar.meta}</span>
+            {bestSellers.length ? (
+              <div className="bars-list">
+                {bestSellers.map((bar) => (
+                  <div className="bar-row" key={bar.name}>
+                    <div className="bar-copy">
+                      <strong>{bar.name}</strong>
+                      <span>{formatCurrency(bar.revenueCents)} in revenue</span>
+                    </div>
+                    <div className="bar-track">
+                      <div className="bar-fill" style={{ width: `${Math.max((bar.quantity / maxQuantity) * 100, 8)}%` }} />
+                    </div>
+                    <span className="bar-value">{bar.quantity}x</span>
                   </div>
-                  <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${Math.max((bar.value / maxValue) * 100, 8)}%` }} />
-                  </div>
-                  <span className="bar-value">{bar.value}%</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <span className="row-subtle">No completed order items yet to rank.</span>
+            )}
           </article>
 
-          <FulfillmentAnalyticsCards fulfillmentSummary={fulfillmentSummary} formatCurrency={formatCurrency} />
+          <FulfillmentAnalyticsCards repeatCustomerStats={repeatCustomerStats} fulfillmentSpeedStats={fulfillmentSpeedStats} />
         </div>
       </section>
     );

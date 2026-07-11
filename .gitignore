@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# sandbox scratch (files the ops session couldn't unlink due to mount permissions)
+/.removed/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
