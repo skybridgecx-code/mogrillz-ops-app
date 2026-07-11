@@ -36,6 +36,26 @@ function getServiceWindowCopy(order: Order) {
   return normalized.trim() || DEFAULT_PICKUP_WINDOW_COPY;
 }
 
+function formatShortDate(value: string) {
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return "Unknown date";
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getCustomerHistory(order: Order, allOrders: Order[]) {
+  const email = order.customerEmail?.trim().toLowerCase();
+  const name = order.customerName.trim().toLowerCase();
+
+  return allOrders
+    .filter((candidate) => {
+      if (candidate.id === order.id) return false;
+      if (email) return candidate.customerEmail?.trim().toLowerCase() === email;
+      return candidate.customerName.trim().toLowerCase() === name;
+    })
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 5);
+}
+
 function formatOrderDateTime(value: string | null) {
   if (!value) return "Not available";
   const parsed = new Date(value);
@@ -135,8 +155,10 @@ const ORDER_WORKFLOW: Array<{
 
 interface OrderDetailCardProps {
   selectedOrder: Order | null;
+  allOrders: Order[];
   onOpenInventory: () => void;
   onOpenCustomer: () => void;
+  onSelectHistoricalOrder: (id: string) => void;
   onAdvanceStatus: (orderId: string, nextStatus: Order["status"]) => Promise<void>;
   statusError: string | null;
   statusUpdating: boolean;
@@ -145,8 +167,10 @@ interface OrderDetailCardProps {
 
 export function OrderDetailCard({
   selectedOrder,
+  allOrders,
   onOpenInventory,
   onOpenCustomer,
+  onSelectHistoricalOrder,
   onAdvanceStatus,
   statusError,
   statusUpdating,
@@ -170,6 +194,7 @@ export function OrderDetailCard({
     pickupTimingBucket === "unavailable" && hasSpecificPickupWindow
       ? serviceWindowCopy
       : pickupTimingLabel;
+  const customerHistory = selectedOrder ? getCustomerHistory(selectedOrder, allOrders) : [];
   const [noteDraft, setNoteDraft] = useState(selectedOrder?.operatorNote ?? "");
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteSaving, setNoteSaving] = useState(false);
@@ -303,6 +328,33 @@ export function OrderDetailCard({
                 <span>{item.notes ? "Customized" : "Standard"}</span>
               </div>
             ))}
+          </div>
+          <div className="detail-note">
+            <strong>Customer history</strong>
+            {customerHistory.length
+              ? `${customerHistory.length} other order${customerHistory.length === 1 ? "" : "s"} on file for this customer.`
+              : "No other orders on file for this customer yet."}
+            {customerHistory.length ? (
+              <div className="stack-list" style={{ marginTop: "0.65rem" }}>
+                {customerHistory.map((pastOrder) => (
+                  <button
+                    className="stack-item"
+                    key={pastOrder.id}
+                    onClick={() => onSelectHistoricalOrder(pastOrder.id)}
+                    style={{ textAlign: "left", width: "100%", cursor: "pointer" }}
+                    type="button"
+                  >
+                    <div className="stack-item-head">
+                      <div className="stack-item-title">{shortOrderNumber(pastOrder.orderNumber)}</div>
+                      <span className="status-pill">{getOrderStatusDisplayLabel(pastOrder.status)}</span>
+                    </div>
+                    <div className="stack-item-meta">
+                      {formatShortDate(pastOrder.createdAt)} · {formatCurrency(pastOrder.totalCents)} · {pastOrder.items.length} item{pastOrder.items.length === 1 ? "" : "s"}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="timeline">
             {ORDER_WORKFLOW.map((step, index) => {

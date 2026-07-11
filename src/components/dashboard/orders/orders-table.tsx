@@ -107,6 +107,7 @@ export function OrdersTable({
               pickupTimingBucket !== "unavailable" || !hasSpecificPickupWindow;
             const dueToday = pending && pickupTimingBucket === "today";
             const dueTomorrow = pending && pickupTimingBucket === "tomorrow";
+            const hasCustomRequest = pending && Boolean(order.customRequest?.trim());
 
             return (
               <tr
@@ -116,6 +117,7 @@ export function OrdersTable({
                   order.id === newestOrderId ? "is-newest" : "",
                   dueToday ? "is-due-today" : "",
                   dueTomorrow ? "is-due-tomorrow" : "",
+                  hasCustomRequest ? "is-custom-request" : "",
                   inactive ? "is-inactive" : "",
                 ]
                   .filter(Boolean)
@@ -132,6 +134,7 @@ export function OrdersTable({
                         {order.id === newestOrderId ? <span className="queue-flag queue-flag-new">Newest</span> : null}
                         {dueToday ? <span className="queue-flag queue-flag-due-today">Due today</span> : null}
                         {dueTomorrow ? <span className="queue-flag queue-flag-due-tomorrow">Due tomorrow</span> : null}
+                        {hasCustomRequest ? <span className="queue-flag queue-flag-custom">Custom request</span> : null}
                       </span>
                     </span>
                   </div>

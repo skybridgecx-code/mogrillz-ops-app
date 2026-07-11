@@ -255,6 +255,10 @@ export function DashboardApp({
         const serviceDateRight = right.serviceDate ? toTimestamp(`${right.serviceDate}T00:00:00`) : Number.MAX_SAFE_INTEGER;
         if (serviceDateLeft !== serviceDateRight) return serviceDateLeft - serviceDateRight;
 
+        const customRequestLeft = left.customRequest?.trim() ? 0 : 1;
+        const customRequestRight = right.customRequest?.trim() ? 0 : 1;
+        if (customRequestLeft !== customRequestRight) return customRequestLeft - customRequestRight;
+
         return toTimestamp(right.createdAt) - toTimestamp(left.createdAt);
       });
     },
@@ -382,6 +386,12 @@ export function DashboardApp({
 
     return badges;
   }, [snapshot.orders, lowStockItems, emailUpdateSummary.recentCount]);
+
+  function handleSelectAnyOrder(orderId: string) {
+    setOrderFilter("all");
+    setFulfillmentFilter("all");
+    setSelectedOrderId(orderId);
+  }
 
   function goTo(nextView: ViewKey) {
     setView(nextView);
@@ -814,6 +824,7 @@ export function DashboardApp({
           setOrderFilter("all");
           setFulfillmentFilter("all");
         }}
+        onSelectHistoricalOrder={handleSelectAnyOrder}
         onSelectOrder={setSelectedOrderId}
         orderFilter={orderFilter}
         orderFilters={orderFilters}

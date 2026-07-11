@@ -47,6 +47,7 @@ interface OrdersPanelProps {
   onResetFilters: () => void;
   onOpenInventory: () => void;
   onOpenCustomer: () => void;
+  onSelectHistoricalOrder: (id: string) => void;
   onAdvanceStatus: (orderId: string, nextStatus: Order["status"]) => Promise<void>;
   statusError: string | null;
   statusUpdating: boolean;
@@ -69,6 +70,7 @@ export function OrdersPanel({
   onResetFilters,
   onOpenInventory,
   onOpenCustomer,
+  onSelectHistoricalOrder,
   onAdvanceStatus,
   statusError,
   statusUpdating,
@@ -194,8 +196,10 @@ export function OrdersPanel({
 
         <OrderDetailCard
           selectedOrder={selectedOrder}
+          allOrders={orders}
           onOpenInventory={onOpenInventory}
           onOpenCustomer={onOpenCustomer}
+          onSelectHistoricalOrder={onSelectHistoricalOrder}
           onAdvanceStatus={onAdvanceStatus}
           statusError={statusError}
           statusUpdating={statusUpdating}

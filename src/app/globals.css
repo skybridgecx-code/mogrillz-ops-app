@@ -779,6 +779,10 @@ button {
   box-shadow: inset 3px 0 0 rgba(232, 184, 75, 0.52);
 }
 
+.ops-table.ops-table-orders tbody tr.is-custom-request td {
+  box-shadow: inset 3px 0 0 rgba(196, 140, 255, 0.55);
+}
+
 .ops-table.ops-table-orders tbody tr.is-inactive td {
   opacity: 0.66;
 }
@@ -853,6 +857,12 @@ button {
   border-color: rgba(232, 184, 75, 0.4);
   color: #ffe2a2;
   background: rgba(232, 184, 75, 0.16);
+}
+
+.queue-flag-custom {
+  border-color: rgba(196, 140, 255, 0.42);
+  color: #ddc4ff;
+  background: rgba(196, 140, 255, 0.16);
 }
 
 .detail-hero {
