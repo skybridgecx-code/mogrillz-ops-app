@@ -22,7 +22,28 @@ type MenuPayload = {
   sort_order: number;
   is_featured: boolean;
   notes: string | null;
+  calories?: number | null;
+  protein_g?: number | null;
+  carbs_g?: number | null;
+  fat_g?: number | null;
 };
+
+function readOptionalInteger(value: unknown, min: number, max: number, field: string) {
+  if (value == null || value === "") return null;
+
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value.trim())
+        : Number.NaN;
+
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${field} must be between ${min} and ${max}.`);
+  }
+
+  return Math.round(parsed);
+}
 
 function slugify(value: string) {
   return value
@@ -112,7 +133,7 @@ function readMenuPayload(body: unknown): MenuPayload {
     throw new Error("Slug is required.");
   }
 
-  return {
+  const payload: MenuPayload = {
     slug,
     name,
     category: readText(data.category, 60, "Category"),
@@ -125,6 +146,22 @@ function readMenuPayload(body: unknown): MenuPayload {
     is_featured: readBoolean(data.isFeatured, "Featured flag"),
     notes: readOptionalText(data.notes, 400),
   };
+
+  // Macros are optional and only written when provided, so the route keeps
+  // working before the meal-prep migration has been applied.
+  const calories = readOptionalInteger(data.calories, 0, 5000, "Calories");
+  const proteinG = readOptionalInteger(data.proteinG, 0, 500, "Protein");
+  const carbsG = readOptionalInteger(data.carbsG, 0, 500, "Carbs");
+  const fatG = readOptionalInteger(data.fatG, 0, 500, "Fat");
+
+  if (calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
+    payload.calories = calories;
+    payload.protein_g = proteinG;
+    payload.carbs_g = carbsG;
+    payload.fat_g = fatG;
+  }
+
+  return payload;
 }
 
 async function requireAdmin() {

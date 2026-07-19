@@ -69,6 +69,10 @@ export interface MenuItem {
   sortOrder: number;
   isFeatured: boolean;
   notes: string | null;
+  calories?: number | null;
+  proteinG?: number | null;
+  carbsG?: number | null;
+  fatG?: number | null;
 }
 
 export interface Customer {

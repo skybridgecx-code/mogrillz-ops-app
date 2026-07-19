@@ -214,6 +214,10 @@ function mapMenuItem(row: Row): MenuItem {
     sortOrder: readNumber(row.sort_order, 0),
     isFeatured: Boolean(row.is_featured),
     notes: typeof row.notes === "string" ? row.notes : null,
+    calories: typeof row.calories === "number" ? row.calories : null,
+    proteinG: typeof row.protein_g === "number" ? row.protein_g : null,
+    carbsG: typeof row.carbs_g === "number" ? row.carbs_g : null,
+    fatG: typeof row.fat_g === "number" ? row.fat_g : null,
   };
 }
 

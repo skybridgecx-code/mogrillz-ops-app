@@ -29,6 +29,10 @@ export interface MenuPayload {
   sortOrder: number;
   isFeatured: boolean;
   notes: string;
+  calories: number | null;
+  proteinG: number | null;
+  carbsG: number | null;
+  fatG: number | null;
 }
 
 export interface OpsApi {

@@ -22,13 +22,28 @@ interface DraftState {
   sortOrder: string;
   isFeatured: boolean;
   notes: string;
+  calories: string;
+  proteinG: string;
+  carbsG: string;
+  fatG: string;
 }
 
-function itemToDraft(item?: MenuItem | null): DraftState {
+function macroToInput(value: number | null | undefined) {
+  return value == null ? "" : String(value);
+}
+
+function inputToMacro(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
+}
+
+function itemToDraft(item?: MenuItem | null, defaultCategory = "signature"): DraftState {
   return {
     slug: item?.slug ?? "",
     name: item?.name ?? "",
-    category: item?.category ?? "signature",
+    category: item?.category ?? defaultCategory,
     price: item ? (item.priceCents / 100).toFixed(2) : "",
     availability: item?.availability ?? "Live",
     allocationLimit: item ? String(item.allocationLimit) : "0",
@@ -37,6 +52,10 @@ function itemToDraft(item?: MenuItem | null): DraftState {
     sortOrder: item ? String(item.sortOrder) : "0",
     isFeatured: item?.isFeatured ?? false,
     notes: item?.notes ?? "",
+    calories: macroToInput(item?.calories),
+    proteinG: macroToInput(item?.proteinG),
+    carbsG: macroToInput(item?.carbsG),
+    fatG: macroToInput(item?.fatG),
   };
 }
 
@@ -57,6 +76,10 @@ function draftToPayload(draft: DraftState): MenuPayload | null {
     sortOrder: Number(draft.sortOrder) || 0,
     isFeatured: draft.isFeatured,
     notes: draft.notes,
+    calories: inputToMacro(draft.calories),
+    proteinG: inputToMacro(draft.proteinG),
+    carbsG: inputToMacro(draft.carbsG),
+    fatG: inputToMacro(draft.fatG),
   };
 }
 
@@ -73,6 +96,10 @@ function itemToPayload(item: MenuItem): MenuPayload {
     sortOrder: item.sortOrder,
     isFeatured: item.isFeatured,
     notes: item.notes ?? "",
+    calories: item.calories ?? null,
+    proteinG: item.proteinG ?? null,
+    carbsG: item.carbsG ?? null,
+    fatG: item.fatG ?? null,
   };
 }
 
@@ -80,17 +107,28 @@ function slugify(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+function macroSummary(item: MenuItem) {
+  const parts: string[] = [];
+  if (item.calories != null) parts.push(`${item.calories} cal`);
+  if (item.proteinG != null) parts.push(`${item.proteinG}g protein`);
+  if (item.carbsG != null) parts.push(`${item.carbsG}g carbs`);
+  if (item.fatG != null) parts.push(`${item.fatG}g fat`);
+  return parts.join(" · ");
+}
+
 function DishSheet({
   item,
   api,
+  defaultCategory,
   onClose,
 }: {
   item: MenuItem | null;
   api: OpsApi;
+  defaultCategory: string;
   onClose: () => void;
 }) {
   const isNew = !item;
-  const [draft, setDraft] = useState<DraftState>(() => itemToDraft(item));
+  const [draft, setDraft] = useState<DraftState>(() => itemToDraft(item, defaultCategory));
   const [saving, setSaving] = useState(false);
 
   function set<K extends keyof DraftState>(key: K, value: DraftState[K]) {
@@ -141,15 +179,38 @@ function DishSheet({
           <textarea className="textarea" onChange={(event) => set("description", event.target.value)} value={draft.description} />
         </label>
         <label className="field">
-          Category
+          Category (e.g. meal-prep)
           <input className="input" onChange={(event) => set("category", event.target.value)} value={draft.category} />
         </label>
         <label className="field">
           Display order (lower shows first)
           <input className="input" inputMode="numeric" onChange={(event) => set("sortOrder", event.target.value)} value={draft.sortOrder} />
         </label>
+
+        <div className="span-2">
+          <p className="kicker" style={{ marginBottom: "0.5rem" }}>Nutrition label (optional)</p>
+          <div className="form-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            <label className="field">
+              Cal
+              <input className="input" inputMode="numeric" onChange={(event) => set("calories", event.target.value)} value={draft.calories} />
+            </label>
+            <label className="field">
+              Protein g
+              <input className="input" inputMode="numeric" onChange={(event) => set("proteinG", event.target.value)} value={draft.proteinG} />
+            </label>
+            <label className="field">
+              Carbs g
+              <input className="input" inputMode="numeric" onChange={(event) => set("carbsG", event.target.value)} value={draft.carbsG} />
+            </label>
+            <label className="field">
+              Fat g
+              <input className="input" inputMode="numeric" onChange={(event) => set("fatG", event.target.value)} value={draft.fatG} />
+            </label>
+          </div>
+        </div>
+
         <label className="field">
-          Daily limit (0 = unlimited)
+          Weekly limit (0 = unlimited)
           <input className="input" inputMode="numeric" onChange={(event) => set("allocationLimit", event.target.value)} value={draft.allocationLimit} />
         </label>
         <label className="field">
@@ -203,10 +264,20 @@ export function MenuView({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+
+  const categories = useMemo(() => {
+    const seen = new Set(menu.map((item) => item.category.trim().toLowerCase()).filter(Boolean));
+    seen.add("meal-prep");
+    return ["all", ...[...seen].sort()];
+  }, [menu]);
 
   const sorted = useMemo(
-    () => [...menu].sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)),
-    [menu],
+    () =>
+      [...menu]
+        .filter((item) => categoryFilter === "all" || item.category.trim().toLowerCase() === categoryFilter)
+        .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)),
+    [menu, categoryFilter],
   );
 
   const riskByMenuId = useMemo(() => {
@@ -224,6 +295,8 @@ export function MenuView({
 
   const editingItem = menu.find((item) => item.id === editingId) ?? null;
   const liveCount = menu.filter((item) => item.availability === "Live").length;
+  const mealPrepEmpty =
+    categoryFilter === "meal-prep" && !sorted.length;
 
   async function quickToggle(item: MenuItem) {
     const next: MenuItem["availability"] = item.availability === "Live" ? "Paused" : "Live";
@@ -234,68 +307,105 @@ export function MenuView({
 
   return (
     <>
-      <div className="card-head" style={{ marginBottom: "1rem" }}>
+      <div className="card-head" style={{ marginBottom: "0.75rem", flexWrap: "wrap" }}>
         <span className="pill success">{liveCount} of {menu.length} dishes live on the site</span>
         <button className="btn btn-primary" onClick={() => setCreating(true)} type="button">
           + Add dish
         </button>
       </div>
 
-      <div className="menu-grid">
-        {sorted.map((item) => {
-          const risks = riskByMenuId.get(item.id) ?? [];
-          return (
-            <div
-              className="dish-card"
-              key={item.id}
-              onClick={() => setEditingId(item.id)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") setEditingId(item.id);
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <div
-                className="dish-img"
-                style={item.imageUrl ? { backgroundImage: `url(${item.imageUrl})` } : undefined}
-              >
-                {item.imageUrl ? null : "🍽️"}
-              </div>
-              <div className="dish-body">
-                <div className="dish-top">
-                  <span className="dish-name">{item.name}</span>
-                  <span className={`pill ${statusTone(item.availability)}`}>{item.availability}</span>
-                </div>
-                <div className="dish-desc">{item.description || "No description yet."}</div>
-                {risks.length ? (
-                  <div className="ticket-flag" style={{ color: "var(--red)" }}>
-                    ⚠️ Low ingredient: {risks.join(", ")}
-                  </div>
-                ) : null}
-                <div className="dish-foot">
-                  <span className="dish-price">{formatCurrency(item.priceCents)}</span>
-                  <button
-                    className={`btn btn-sm ${item.availability === "Live" ? "btn-ghost" : "btn-primary"}`}
-                    disabled={togglingId === item.id}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      quickToggle(item);
-                    }}
-                    type="button"
-                  >
-                    {togglingId === item.id ? "…" : item.availability === "Live" ? "Pause" : "Go live"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+      <div className="seg" role="tablist" style={{ marginBottom: "1rem" }}>
+        {categories.map((category) => (
+          <button
+            className={`seg-btn ${categoryFilter === category ? "active" : ""}`}
+            key={category}
+            onClick={() => setCategoryFilter(category)}
+            type="button"
+          >
+            {category === "all" ? "All" : category === "meal-prep" ? "🍱 Meal Prep" : category}
+          </button>
+        ))}
       </div>
 
+      {mealPrepEmpty ? (
+        <div className="allclear">
+          <div aria-hidden className="allclear-emoji">🍱</div>
+          <div className="allclear-title">No meal prep dishes yet</div>
+          Add your first one with &ldquo;+ Add dish&rdquo; — set the category to <strong>meal-prep</strong>, fill in the
+          nutrition label, and use the weekly limit as your prep cap. The playbook in docs/ has the launch menu and pricing.
+        </div>
+      ) : (
+        <div className="menu-grid">
+          {sorted.map((item) => {
+            const risks = riskByMenuId.get(item.id) ?? [];
+            const macros = macroSummary(item);
+            return (
+              <div
+                className="dish-card"
+                key={item.id}
+                onClick={() => setEditingId(item.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") setEditingId(item.id);
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <div
+                  className="dish-img"
+                  style={item.imageUrl ? { backgroundImage: `url(${item.imageUrl})` } : undefined}
+                >
+                  {item.imageUrl ? null : "🍽️"}
+                </div>
+                <div className="dish-body">
+                  <div className="dish-top">
+                    <span className="dish-name">{item.name}</span>
+                    <span className={`pill ${statusTone(item.availability)}`}>{item.availability}</span>
+                  </div>
+                  <div className="dish-desc">{item.description || "No description yet."}</div>
+                  {macros ? <div className="chip" style={{ marginTop: "0.45rem" }}>{macros}</div> : null}
+                  {risks.length ? (
+                    <div className="ticket-flag" style={{ color: "var(--red)" }}>
+                      ⚠️ Low ingredient: {risks.join(", ")}
+                    </div>
+                  ) : null}
+                  <div className="dish-foot">
+                    <span className="dish-price">{formatCurrency(item.priceCents)}</span>
+                    <button
+                      className={`btn btn-sm ${item.availability === "Live" ? "btn-ghost" : "btn-primary"}`}
+                      disabled={togglingId === item.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        quickToggle(item);
+                      }}
+                      type="button"
+                    >
+                      {togglingId === item.id ? "…" : item.availability === "Live" ? "Pause" : "Go live"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {editingItem ? (
-        <DishSheet api={api} item={editingItem} key={editingItem.id} onClose={() => setEditingId(null)} />
+        <DishSheet
+          api={api}
+          defaultCategory="signature"
+          item={editingItem}
+          key={editingItem.id}
+          onClose={() => setEditingId(null)}
+        />
       ) : null}
-      {creating ? <DishSheet api={api} item={null} onClose={() => setCreating(false)} /> : null}
+      {creating ? (
+        <DishSheet
+          api={api}
+          defaultCategory={categoryFilter === "all" ? "signature" : categoryFilter}
+          item={null}
+          onClose={() => setCreating(false)}
+        />
+      ) : null}
     </>
   );
 }

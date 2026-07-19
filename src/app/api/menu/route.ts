@@ -61,6 +61,23 @@ function readBoolean(value: unknown, field: string) {
   return value;
 }
 
+function readOptionalInteger(value: unknown, min: number, max: number, field: string) {
+  if (value == null || value === "") return null;
+
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value.trim())
+        : Number.NaN;
+
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${field} must be between ${min} and ${max}.`);
+  }
+
+  return Math.round(parsed);
+}
+
 async function requireAdmin() {
   const supabase = createSupabaseServerClient();
   if (!supabase) {
@@ -109,21 +126,37 @@ export async function POST(request: Request) {
       throw new Error("Slug is required.");
     }
 
+    const insertPayload: Record<string, unknown> = {
+      slug,
+      name,
+      category: readText(payload.category, 60, "Category"),
+      price_cents: readInteger(payload.priceCents, 0, 100000, "Price"),
+      availability: readAvailability(payload.availability),
+      allocation_limit: readInteger(payload.allocationLimit, 0, 100, "Allocation limit"),
+      description: readText(payload.description, 500, "Description"),
+      image_url: readOptionalText(payload.imageUrl, 500),
+      sort_order: readInteger(payload.sortOrder ?? 0, 0, 100000, "Sort order"),
+      is_featured: readBoolean(payload.isFeatured, "Featured flag"),
+      notes: readOptionalText(payload.notes, 400),
+    };
+
+    // Macros are optional and only written when provided, so item creation
+    // keeps working before the meal-prep migration has been applied.
+    const calories = readOptionalInteger(payload.calories, 0, 5000, "Calories");
+    const proteinG = readOptionalInteger(payload.proteinG, 0, 500, "Protein");
+    const carbsG = readOptionalInteger(payload.carbsG, 0, 500, "Carbs");
+    const fatG = readOptionalInteger(payload.fatG, 0, 500, "Fat");
+
+    if (calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
+      insertPayload.calories = calories;
+      insertPayload.protein_g = proteinG;
+      insertPayload.carbs_g = carbsG;
+      insertPayload.fat_g = fatG;
+    }
+
     const createResult = await authResult.adminClient
       .from("menu_items")
-      .insert({
-        slug,
-        name,
-        category: readText(payload.category, 60, "Category"),
-        price_cents: readInteger(payload.priceCents, 0, 100000, "Price"),
-        availability: readAvailability(payload.availability),
-        allocation_limit: readInteger(payload.allocationLimit, 0, 100, "Allocation limit"),
-        description: readText(payload.description, 500, "Description"),
-        image_url: readOptionalText(payload.imageUrl, 500),
-        sort_order: readInteger(payload.sortOrder ?? 0, 0, 100000, "Sort order"),
-        is_featured: readBoolean(payload.isFeatured, "Featured flag"),
-        notes: readOptionalText(payload.notes, 400),
-      })
+      .insert(insertPayload)
       .select("*")
       .single();
 
