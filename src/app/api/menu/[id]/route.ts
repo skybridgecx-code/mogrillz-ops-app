@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
+const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -43,6 +44,23 @@ function readOptionalInteger(value: unknown, min: number, max: number, field: st
   }
 
   return Math.round(parsed);
+}
+
+function isMissingMacroColumn(error: { message?: string; code?: string } | null | undefined) {
+  const message = error?.message?.toLowerCase() ?? "";
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    MACRO_COLUMNS.some((column) => message.includes(column))
+  );
+}
+
+function stripMacroColumns(payload: MenuPayload) {
+  const next = { ...payload };
+  for (const column of MACRO_COLUMNS) {
+    delete next[column];
+  }
+  return next;
 }
 
 function slugify(value: string) {
@@ -90,8 +108,28 @@ function readAvailability(value: unknown) {
     throw new Error("Availability is required.");
   }
 
+  const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
+  const legacyMap: Record<string, (typeof MENU_AVAILABILITY_VALUES)[number]> = {
+    active: "Live",
+    available: "Live",
+    enabled: "Live",
+    true: "Live",
+    draft: "Watch",
+    pending: "Watch",
+    pause: "Paused",
+    inactive: "Paused",
+    disabled: "Paused",
+    false: "Paused",
+    soldout: "Sold Out",
+    out: "Sold Out",
+    unavailable: "Sold Out",
+  };
+
+  const legacyMatch = legacyMap[normalized];
+  if (legacyMatch) return legacyMatch.toLowerCase();
+
   const match = MENU_AVAILABILITY_VALUES.find(
-    (option) => option.toLowerCase() === value.trim().toLowerCase(),
+    (option) => option.toLowerCase() === normalized,
   );
   if (!match) {
     throw new Error("Availability is invalid.");
@@ -141,20 +179,21 @@ function readMenuPayload(body: unknown): MenuPayload {
     availability: readAvailability(data.availability),
     allocation_limit: readInteger(data.allocationLimit, 0, 100, "Allocation limit"),
     description: readText(data.description, 500, "Description"),
-    image_url: readOptionalText(data.imageUrl, 500),
+    image_url: readOptionalText(data.imageUrl, 2048),
     sort_order: readInteger(data.sortOrder ?? 0, 0, 100000, "Sort order"),
     is_featured: readBoolean(data.isFeatured, "Featured flag"),
     notes: readOptionalText(data.notes, 400),
   };
 
-  // Macros are optional and only written when provided, so the route keeps
-  // working before the meal-prep migration has been applied.
   const calories = readOptionalInteger(data.calories, 0, 5000, "Calories");
   const proteinG = readOptionalInteger(data.proteinG, 0, 500, "Protein");
   const carbsG = readOptionalInteger(data.carbsG, 0, 500, "Carbs");
   const fatG = readOptionalInteger(data.fatG, 0, 500, "Fat");
+  const hasMacroInput = ["calories", "proteinG", "carbsG", "fatG"].some((key) =>
+    Object.prototype.hasOwnProperty.call(data, key),
+  );
 
-  if (calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
+  if (hasMacroInput || calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
     payload.calories = calories;
     payload.protein_g = proteinG;
     payload.carbs_g = carbsG;
@@ -238,12 +277,21 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Slug is already in use." }, { status: 409 });
   }
 
-  const updateResult = await authResult.adminClient
+  let updateResult = await authResult.adminClient
     .from("menu_items")
     .update(payload)
     .eq("id", resolvedMenuId)
     .select("*")
     .single();
+
+  if (updateResult.error && isMissingMacroColumn(updateResult.error)) {
+    updateResult = await authResult.adminClient
+      .from("menu_items")
+      .update(stripMacroColumns(payload))
+      .eq("id", resolvedMenuId)
+      .select("*")
+      .single();
+  }
 
   if (updateResult.error || !updateResult.data) {
     console.error("[api/menu/[id]] update failed:", updateResult.error);

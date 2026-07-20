@@ -5,6 +5,24 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
+const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
+
+function isMissingMacroColumn(error: { message?: string; code?: string } | null | undefined) {
+  const message = error?.message?.toLowerCase() ?? "";
+  return (
+    error?.code === "42703" ||
+    error?.code === "PGRST204" ||
+    MACRO_COLUMNS.some((column) => message.includes(column))
+  );
+}
+
+function stripMacroColumns<T extends Record<string, unknown>>(payload: T) {
+  const next = { ...payload };
+  for (const column of MACRO_COLUMNS) {
+    delete next[column];
+  }
+  return next;
+}
 
 function slugify(value: string) {
   return value
@@ -49,8 +67,29 @@ function readInteger(value: unknown, min: number, max: number, field: string) {
 
 function readAvailability(value: unknown) {
   if (typeof value !== "string") throw new Error("Availability is required.");
+
+  const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
+  const legacyMap: Record<string, (typeof MENU_AVAILABILITY_VALUES)[number]> = {
+    active: "Live",
+    available: "Live",
+    enabled: "Live",
+    true: "Live",
+    draft: "Watch",
+    pending: "Watch",
+    pause: "Paused",
+    inactive: "Paused",
+    disabled: "Paused",
+    false: "Paused",
+    soldout: "Sold Out",
+    out: "Sold Out",
+    unavailable: "Sold Out",
+  };
+
+  const legacyMatch = legacyMap[normalized];
+  if (legacyMatch) return legacyMatch.toLowerCase();
+
   const match = MENU_AVAILABILITY_VALUES.find(
-    (option) => option.toLowerCase() === value.trim().toLowerCase(),
+    (option) => option.toLowerCase() === normalized,
   );
   if (!match) throw new Error("Availability is invalid.");
   return match.toLowerCase();
@@ -134,7 +173,7 @@ export async function POST(request: Request) {
       availability: readAvailability(payload.availability),
       allocation_limit: readInteger(payload.allocationLimit, 0, 100, "Allocation limit"),
       description: readText(payload.description, 500, "Description"),
-      image_url: readOptionalText(payload.imageUrl, 500),
+      image_url: readOptionalText(payload.imageUrl, 2048),
       sort_order: readInteger(payload.sortOrder ?? 0, 0, 100000, "Sort order"),
       is_featured: readBoolean(payload.isFeatured, "Featured flag"),
       notes: readOptionalText(payload.notes, 400),
@@ -154,11 +193,19 @@ export async function POST(request: Request) {
       insertPayload.fat_g = fatG;
     }
 
-    const createResult = await authResult.adminClient
+    let createResult = await authResult.adminClient
       .from("menu_items")
       .insert(insertPayload)
       .select("*")
       .single();
+
+    if (createResult.error && isMissingMacroColumn(createResult.error)) {
+      createResult = await authResult.adminClient
+        .from("menu_items")
+        .insert(stripMacroColumns(insertPayload))
+        .select("*")
+        .single();
+    }
 
     if (createResult.error || !createResult.data) {
       const message =

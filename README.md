@@ -6,17 +6,21 @@ Shama’s Kitchen Ops is the private admin app for the Shama’s Kitchen always-
 
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the Supabase SQL editor.
-3. Run `supabase/seed.sql` if you want the starter demo data.
-4. Copy `.env.example` to `.env.local` for local work, then set these values:
+3. Run any files in `supabase/migrations/` that were added after your original schema install.
+4. Run `supabase/seed.sql` if you want the starter demo data.
+5. Copy `.env.example` to `.env.local` for local work, then set these values:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
+MOGRILLZ_MENU_IMAGE_BUCKET=menu-images
 NEXT_PUBLIC_USE_MOCK_DATA=false
 ```
 
-5. Start the app with `npm run dev`.
+The menu image upload route uses the service role key server-side to create or repair the configured public image bucket with a 5 MB image-only limit.
+
+6. Start the app with `npm run dev`.
 
 ## First Admin
 

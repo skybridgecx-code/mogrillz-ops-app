@@ -63,8 +63,14 @@ create table if not exists menu_items (
   allocation_limit integer not null default 0,
   description text not null,
   image_url text,
+  image_path text,
+  image_bucket text,
   sort_order integer not null default 0,
   is_featured boolean not null default false,
+  calories integer,
+  protein_g integer,
+  carbs_g integer,
+  fat_g integer,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -115,7 +121,13 @@ create table if not exists orders (
 alter table orders add column if not exists operator_note text;
 alter table customers add column if not exists auth_user_id uuid unique references auth.users(id) on delete set null;
 alter table menu_items add column if not exists image_url text;
+alter table menu_items add column if not exists image_path text;
+alter table menu_items add column if not exists image_bucket text;
 alter table menu_items add column if not exists sort_order integer not null default 0;
+alter table menu_items add column if not exists calories integer;
+alter table menu_items add column if not exists protein_g integer;
+alter table menu_items add column if not exists carbs_g integer;
+alter table menu_items add column if not exists fat_g integer;
 alter table orders add column if not exists service_date date;
 alter table orders alter column drop_day drop not null;
 alter table orders alter column fulfillment_method set default 'pickup';

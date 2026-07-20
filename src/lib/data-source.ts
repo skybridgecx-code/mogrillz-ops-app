@@ -59,6 +59,22 @@ function capitalizeWords(value: string, fallback: string) {
     .join(" ");
 }
 
+function normalizeMenuAvailability(value: unknown): MenuItem["availability"] {
+  const raw = readString(value).trim().toLowerCase().replace(/[_-]+/g, " ");
+
+  if (!raw) return "Live";
+  if (raw === "live" || raw === "active" || raw === "available" || raw === "enabled" || raw === "true") {
+    return "Live";
+  }
+  if (raw === "watch" || raw === "draft" || raw === "pending") return "Watch";
+  if (raw === "paused" || raw === "pause" || raw === "inactive" || raw === "disabled" || raw === "false") {
+    return "Paused";
+  }
+  if (raw === "sold out" || raw === "soldout" || raw === "out" || raw === "unavailable") return "Sold Out";
+
+  return "Live";
+}
+
 function normalizeDeliveryWindow(value: unknown, fulfillmentMethod: Order["fulfillmentMethod"]) {
   const raw = readString(value).trim();
   const fallback =
@@ -207,7 +223,7 @@ function mapMenuItem(row: Row): MenuItem {
     name: readString(row.name, "Unknown Menu Item"),
     category: readString(row.category, "Menu"),
     priceCents: readNumber(row.price_cents, 0),
-    availability: capitalizeWords(readString(row.availability), "Live") as MenuItem["availability"],
+    availability: normalizeMenuAvailability(row.availability),
     allocationLimit: readNumber(row.allocation_limit, 0),
     description: readString(row.description, ""),
     imageUrl: typeof row.image_url === "string" ? row.image_url : null,
