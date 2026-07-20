@@ -48,7 +48,7 @@ function itemToDraft(item?: MenuItem | null, defaultCategory = "signature"): Dra
     availability: item?.availability ?? "Live",
     allocationLimit: item ? String(item.allocationLimit) : "0",
     description: item?.description ?? "",
-    imageUrl: item?.imageUrl ?? "",
+    imageUrl: item?.storedImageUrl ?? "",
     sortOrder: item ? String(item.sortOrder) : "0",
     isFeatured: item?.isFeatured ?? false,
     notes: item?.notes ?? "",
@@ -92,7 +92,7 @@ function itemToPayload(item: MenuItem): MenuPayload {
     availability: item.availability,
     allocationLimit: item.allocationLimit,
     description: item.description,
-    imageUrl: item.imageUrl ?? "",
+    imageUrl: item.storedImageUrl ?? "",
     sortOrder: item.sortOrder,
     isFeatured: item.isFeatured,
     notes: item.notes ?? "",
@@ -220,7 +220,7 @@ function DishSheet({
         <div className="span-2">
           {item ? (
             <MenuImageUploader
-              currentImageUrl={draft.imageUrl || null}
+              currentImageUrl={item.imageUrl || draft.imageUrl || null}
               itemId={item.id}
               onUploaded={(url) => set("imageUrl", url)}
             />

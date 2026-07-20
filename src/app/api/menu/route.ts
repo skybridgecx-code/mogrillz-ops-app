@@ -6,19 +6,20 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
 const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
+const OPTIONAL_MENU_COLUMNS = [...MACRO_COLUMNS, "is_active"] as const;
 
-function isMissingMacroColumn(error: { message?: string; code?: string } | null | undefined) {
+function isMissingOptionalMenuColumn(error: { message?: string; code?: string } | null | undefined) {
   const message = error?.message?.toLowerCase() ?? "";
   return (
     error?.code === "42703" ||
     error?.code === "PGRST204" ||
-    MACRO_COLUMNS.some((column) => message.includes(column))
+    OPTIONAL_MENU_COLUMNS.some((column) => message.includes(column))
   );
 }
 
-function stripMacroColumns<T extends Record<string, unknown>>(payload: T) {
+function stripOptionalMenuColumns<T extends Record<string, unknown>>(payload: T) {
   const next = { ...payload };
-  for (const column of MACRO_COLUMNS) {
+  for (const column of OPTIONAL_MENU_COLUMNS) {
     delete next[column];
   }
   return next;
@@ -165,12 +166,14 @@ export async function POST(request: Request) {
       throw new Error("Slug is required.");
     }
 
+    const availability = readAvailability(payload.availability);
     const insertPayload: Record<string, unknown> = {
       slug,
       name,
       category: readText(payload.category, 60, "Category"),
       price_cents: readInteger(payload.priceCents, 0, 100000, "Price"),
-      availability: readAvailability(payload.availability),
+      availability,
+      is_active: availability === "live",
       allocation_limit: readInteger(payload.allocationLimit, 0, 100, "Allocation limit"),
       description: readText(payload.description, 500, "Description"),
       image_url: readOptionalText(payload.imageUrl, 2048),
@@ -199,10 +202,10 @@ export async function POST(request: Request) {
       .select("*")
       .single();
 
-    if (createResult.error && isMissingMacroColumn(createResult.error)) {
+    if (createResult.error && isMissingOptionalMenuColumn(createResult.error)) {
       createResult = await authResult.adminClient
         .from("menu_items")
-        .insert(stripMacroColumns(insertPayload))
+        .insert(stripOptionalMenuColumns(insertPayload))
         .select("*")
         .single();
     }

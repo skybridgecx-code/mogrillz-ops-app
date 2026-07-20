@@ -65,8 +65,11 @@ create table if not exists menu_items (
   image_url text,
   image_path text,
   image_bucket text,
+  image_alt text not null default '',
   sort_order integer not null default 0,
   is_featured boolean not null default false,
+  is_popular boolean not null default false,
+  is_active boolean not null default false,
   calories integer,
   protein_g integer,
   carbs_g integer,
@@ -123,7 +126,10 @@ alter table customers add column if not exists auth_user_id uuid unique referenc
 alter table menu_items add column if not exists image_url text;
 alter table menu_items add column if not exists image_path text;
 alter table menu_items add column if not exists image_bucket text;
+alter table menu_items add column if not exists image_alt text not null default '';
 alter table menu_items add column if not exists sort_order integer not null default 0;
+alter table menu_items add column if not exists is_popular boolean not null default false;
+alter table menu_items add column if not exists is_active boolean not null default false;
 alter table menu_items add column if not exists calories integer;
 alter table menu_items add column if not exists protein_g integer;
 alter table menu_items add column if not exists carbs_g integer;

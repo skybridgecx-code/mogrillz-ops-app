@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
 const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
+const OPTIONAL_MENU_COLUMNS = [...MACRO_COLUMNS, "is_active"] as const;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -22,6 +23,7 @@ type MenuPayload = {
   image_url: string | null;
   sort_order: number;
   is_featured: boolean;
+  is_active?: boolean;
   notes: string | null;
   calories?: number | null;
   protein_g?: number | null;
@@ -46,18 +48,18 @@ function readOptionalInteger(value: unknown, min: number, max: number, field: st
   return Math.round(parsed);
 }
 
-function isMissingMacroColumn(error: { message?: string; code?: string } | null | undefined) {
+function isMissingOptionalMenuColumn(error: { message?: string; code?: string } | null | undefined) {
   const message = error?.message?.toLowerCase() ?? "";
   return (
     error?.code === "42703" ||
     error?.code === "PGRST204" ||
-    MACRO_COLUMNS.some((column) => message.includes(column))
+    OPTIONAL_MENU_COLUMNS.some((column) => message.includes(column))
   );
 }
 
-function stripMacroColumns(payload: MenuPayload) {
+function stripOptionalMenuColumns(payload: MenuPayload) {
   const next = { ...payload };
-  for (const column of MACRO_COLUMNS) {
+  for (const column of OPTIONAL_MENU_COLUMNS) {
     delete next[column];
   }
   return next;
@@ -171,12 +173,14 @@ function readMenuPayload(body: unknown): MenuPayload {
     throw new Error("Slug is required.");
   }
 
+  const availability = readAvailability(data.availability);
   const payload: MenuPayload = {
     slug,
     name,
     category: readText(data.category, 60, "Category"),
     price_cents: readInteger(data.priceCents, 0, 100000, "Price"),
-    availability: readAvailability(data.availability),
+    availability,
+    is_active: availability === "live",
     allocation_limit: readInteger(data.allocationLimit, 0, 100, "Allocation limit"),
     description: readText(data.description, 500, "Description"),
     image_url: readOptionalText(data.imageUrl, 2048),
@@ -284,10 +288,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     .select("*")
     .single();
 
-  if (updateResult.error && isMissingMacroColumn(updateResult.error)) {
+  if (updateResult.error && isMissingOptionalMenuColumn(updateResult.error)) {
     updateResult = await authResult.adminClient
       .from("menu_items")
-      .update(stripMacroColumns(payload))
+      .update(stripOptionalMenuColumns(payload))
       .eq("id", resolvedMenuId)
       .select("*")
       .single();

@@ -66,8 +66,12 @@ export interface MenuItem {
   allocationLimit: number;
   description: string;
   imageUrl: string | null;
+  storedImageUrl?: string | null;
+  imagePath?: string | null;
+  imageBucket?: string | null;
   sortOrder: number;
   isFeatured: boolean;
+  isActive?: boolean | null;
   notes: string | null;
   calories?: number | null;
   proteinG?: number | null;

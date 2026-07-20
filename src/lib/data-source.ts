@@ -1,5 +1,6 @@
 import { cloneMockSnapshot } from "@/lib/mock-data";
 import { normalizeOrderStatus } from "@/lib/dashboard/order-status";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   Customer,
@@ -21,6 +22,9 @@ export interface DashboardDataState {
   dataIssue: string | null;
 }
 
+const IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 365;
+const DEFAULT_IMAGE_BUCKET = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || "food pics";
+
 function shouldUseMockData() {
   const raw = process.env.NEXT_PUBLIC_USE_MOCK_DATA?.trim().toLowerCase();
   return raw === "true" || raw === "1";
@@ -39,6 +43,12 @@ type Row = Record<string, unknown>;
 
 function readString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
+}
+
+function readNullableString(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized || null;
 }
 
 function readNumber(value: unknown, fallback = 0) {
@@ -73,6 +83,35 @@ function normalizeMenuAvailability(value: unknown): MenuItem["availability"] {
   if (raw === "sold out" || raw === "soldout" || raw === "out" || raw === "unavailable") return "Sold Out";
 
   return "Live";
+}
+
+function resolveMenuAvailability(row: Row): MenuItem["availability"] {
+  const isActive = typeof row.is_active === "boolean" ? row.is_active : null;
+  const availability = normalizeMenuAvailability(row.availability);
+
+  if (isActive === true) return "Live";
+  if (isActive === false && availability === "Live") return "Paused";
+
+  return availability;
+}
+
+async function resolveMenuImageUrl(
+  storageClient: ReturnType<typeof createSupabaseAdminClient>,
+  row: Row,
+) {
+  const imageUrl = readNullableString(row.image_url);
+  if (imageUrl) return imageUrl;
+
+  const imagePath = readNullableString(row.image_path);
+  if (!storageClient || !imagePath) return null;
+
+  const imageBucket = readNullableString(row.image_bucket) || DEFAULT_IMAGE_BUCKET;
+  const { data, error } = await storageClient.storage
+    .from(imageBucket)
+    .createSignedUrl(imagePath, IMAGE_SIGNED_URL_TTL_SECONDS);
+
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
 }
 
 function normalizeDeliveryWindow(value: unknown, fulfillmentMethod: Order["fulfillmentMethod"]) {
@@ -215,20 +254,25 @@ function mapInventoryItem(row: Row, linkedMenuItems: InventoryLinkedMenuItem[] =
   };
 }
 
-function mapMenuItem(row: Row): MenuItem {
+function mapMenuItem(row: Row, resolvedImageUrl: string | null = readNullableString(row.image_url)): MenuItem {
   const slug = readString(row.slug, readString(row.id, crypto.randomUUID()));
+  const storedImageUrl = readNullableString(row.image_url);
   return {
     id: readString(row.id, slug),
     slug,
     name: readString(row.name, "Unknown Menu Item"),
     category: readString(row.category, "Menu"),
     priceCents: readNumber(row.price_cents, 0),
-    availability: normalizeMenuAvailability(row.availability),
+    availability: resolveMenuAvailability(row),
     allocationLimit: readNumber(row.allocation_limit, 0),
     description: readString(row.description, ""),
-    imageUrl: typeof row.image_url === "string" ? row.image_url : null,
+    imageUrl: resolvedImageUrl,
+    storedImageUrl,
+    imagePath: readNullableString(row.image_path),
+    imageBucket: readNullableString(row.image_bucket),
     sortOrder: readNumber(row.sort_order, 0),
     isFeatured: Boolean(row.is_featured),
+    isActive: typeof row.is_active === "boolean" ? row.is_active : null,
     notes: typeof row.notes === "string" ? row.notes : null,
     calories: typeof row.calories === "number" ? row.calories : null,
     proteinG: typeof row.protein_g === "number" ? row.protein_g : null,
@@ -447,7 +491,10 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
 
     const orders = (ordersResponse.data ?? []).map((row) => mapOrder(row as Row));
     const menuRows = (menuResponse.data ?? []) as Row[];
-    const menu = menuRows.map((row) => mapMenuItem(row));
+    const storageClient = createSupabaseAdminClient();
+    const menu = await Promise.all(
+      menuRows.map(async (row) => mapMenuItem(row, await resolveMenuImageUrl(storageClient, row))),
+    );
     const menuByDatabaseId = new Map(
       menuRows.map((row) => {
         const databaseId = readString(row.id);
