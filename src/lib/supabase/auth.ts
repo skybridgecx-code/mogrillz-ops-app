@@ -2,8 +2,8 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { userHasAdminMembership } from "@/lib/supabase/access";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function readAuthEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -15,12 +15,17 @@ function readAuthEnv() {
   return { url, publishableKey };
 }
 
+function isExplicitMockModeEnabled() {
+  const value = process.env.NEXT_PUBLIC_USE_MOCK_DATA?.trim().toLowerCase();
+  return value === "true" || value === "1";
+}
+
 export function isSupabaseAuthConfigured() {
   return readAuthEnv() !== null;
 }
 
 export function canBypassAuthForMockMode() {
-  return !isSupabaseAuthConfigured() && process.env.NEXT_PUBLIC_USE_MOCK_DATA !== "false";
+  return !isSupabaseAuthConfigured() && isExplicitMockModeEnabled();
 }
 
 export async function getVerifiedClaims() {
@@ -29,10 +34,7 @@ export async function getVerifiedClaims() {
   const supabase = createSupabaseServerClient();
   if (!supabase) return null;
 
-  const {
-    data,
-    error,
-  } = await supabase.auth.getClaims();
+  const { data, error } = await supabase.auth.getClaims();
 
   if (error || !data?.claims || typeof data.claims.sub !== "string") return null;
   return data.claims;
@@ -46,10 +48,7 @@ export async function getAdminAccessState() {
     return { status: "unauthenticated" as const };
   }
 
-  const {
-    data,
-    error,
-  } = await supabase.auth.getClaims();
+  const { data, error } = await supabase.auth.getClaims();
 
   if (error || !data?.claims || typeof data.claims.sub !== "string") {
     return { status: "unauthenticated" as const };
