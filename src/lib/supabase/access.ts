@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-type AdminMembershipConfig = {
+export type AdminMembershipConfig = {
   table: string;
   userIdColumn: string;
   roleColumn: string;
@@ -27,35 +27,39 @@ export function readAdminMembershipConfig(): AdminMembershipConfig {
   };
 }
 
-function readString(value: unknown, fallback = "") {
-  return typeof value === "string" ? value : fallback;
+function readString(value: unknown) {
+  return typeof value === "string" ? value : "";
 }
 
-function readBoolean(value: unknown, fallback = true) {
-  if (typeof value === "boolean") return value;
-  return fallback;
-}
-
-function matchesAdminMembership(row: Record<string, unknown>, config: AdminMembershipConfig, userId: string) {
-  const rowUserId = readString(row[config.userIdColumn], readString(row.user_id ?? row.userId, ""));
-  const rowRole = readString(row[config.roleColumn], readString(row.role, ""));
-  const rowActive = readBoolean(row[config.activeColumn], readBoolean(row.is_active ?? row.active, true));
+export function matchesAdminMembership(
+  row: Record<string, unknown>,
+  config: AdminMembershipConfig,
+  userId: string,
+) {
+  const rowUserId = readString(row[config.userIdColumn]);
+  const rowRole = readString(row[config.roleColumn]).toLowerCase();
+  const rowActive = row[config.activeColumn];
 
   if (!rowUserId || rowUserId !== userId) return false;
-  if (!rowActive) return false;
+  if (rowActive !== true) return false;
+  if (!rowRole || !config.allowedRoles.length) return false;
 
-  if (!rowRole) return true;
-  return config.allowedRoles.includes(rowRole.toLowerCase());
+  return config.allowedRoles.includes(rowRole);
 }
 
 export async function userHasAdminMembership(client: SupabaseClient, userId: string) {
   const config = readAdminMembershipConfig();
+  const selectedColumns = [...new Set([config.userIdColumn, config.roleColumn, config.activeColumn])].join(",");
 
   try {
-    const { data, error } = await client.from(config.table).select("*").eq(config.userIdColumn, userId).maybeSingle();
+    const { data, error } = await client
+      .from(config.table)
+      .select(selectedColumns)
+      .eq(config.userIdColumn, userId)
+      .maybeSingle();
 
     if (error || !data) return false;
-    return matchesAdminMembership(data as Record<string, unknown>, config, userId);
+    return matchesAdminMembership(data as unknown as Record<string, unknown>, config, userId);
   } catch {
     return false;
   }
