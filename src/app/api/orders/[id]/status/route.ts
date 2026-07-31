@@ -15,6 +15,8 @@ type TransitionResult = {
   status?: string;
   current_status?: string;
   requested_status?: string;
+  existing_order_id?: string;
+  existing_status?: string;
   version?: number;
   request_id?: string;
   replayed?: boolean;
@@ -35,6 +37,16 @@ function transitionFailureResponse(result: TransitionResult, requestId: string) 
   switch (result.error) {
     case "not_found":
       return NextResponse.json({ error: "Order not found.", requestId }, { status: 404 });
+    case "idempotency_conflict":
+      return NextResponse.json(
+        {
+          error: "This idempotency key was already used for a different order operation.",
+          existingOrderId: result.existing_order_id,
+          existingStatus: normalizeOrderStatus(result.existing_status),
+          requestId,
+        },
+        { status: 409 },
+      );
     case "conflict":
       return NextResponse.json(
         {
