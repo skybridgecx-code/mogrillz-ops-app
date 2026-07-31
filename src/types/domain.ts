@@ -34,6 +34,11 @@ export interface Order {
   operatorNote?: string | null;
   paymentProvider: string;
   paymentStatus: string;
+  version?: number;
+  prepStartedAt?: string | null;
+  readyAt?: string | null;
+  pickedUpAt?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
   updatedAt: string;
   items: OrderItem[];
