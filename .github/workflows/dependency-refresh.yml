@@ -28,12 +28,10 @@ jobs:
           cache: npm
 
       - name: Resolve reviewed dependency versions
-        run: |
-          npm install --package-lock-only --ignore-scripts --save-exact next@16.2.12 eslint-config-next@16.2.12 sharp@0.35.0
-          npm audit fix --package-lock-only --ignore-scripts
+        run: npm install --package-lock-only --ignore-scripts
 
-      - name: Verify production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+      - name: Verify complete dependency audit
+        run: npm audit --audit-level=high
 
       - name: Validate refreshed graph
         run: |
