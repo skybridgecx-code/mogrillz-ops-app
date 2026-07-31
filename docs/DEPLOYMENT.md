@@ -6,7 +6,7 @@ This application controls live orders, inventory, and menu state. Treat every pr
 
 - Never deploy application code that requires a newer database schema before applying its migration.
 - Never enable mock mode in production.
-- Never run the first-admin bootstrap script from an untrusted machine.
+- Never run bootstrap or storage-provisioning scripts from an untrusted machine.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` to browser code or prefix it with `NEXT_PUBLIC_`.
 - Keep the application release rollbackable without deleting additive database columns or audit records.
 
@@ -15,7 +15,7 @@ This application controls live orders, inventory, and menu state. Treat every pr
 ```dotenv
 NEXT_PUBLIC_USE_MOCK_DATA=false
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable-key
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 MOGRILLZ_MENU_IMAGE_BUCKET=menu-images
 ```
@@ -35,11 +35,12 @@ Stop the release if any of these are true:
 
 - The target commit is not the reviewed pull-request head.
 - GitHub Actions is not green for that exact commit.
-- The production database identity is uncertain.
+- The production database or storage-project identity is uncertain.
 - A current database backup or point-in-time recovery path is unavailable.
 - The migration has not been reviewed against the current production schema.
 - Production environment variables are missing or mock mode is enabled.
 - `npm run db:preflight` does not report schema version `2026073002` or newer.
+- `npm run storage:provision` cannot verify the configured image bucket.
 
 ## Migration-first release sequence
 
@@ -57,9 +58,10 @@ Stop the release if any of these are true:
    ```bash
    npm ci
    npm run db:preflight
+   npm run storage:provision
    ```
 
-6. Confirm the command emits JSON with:
+6. Confirm `db:preflight` emits JSON with:
 
    ```json
    {
@@ -71,9 +73,10 @@ Stop the release if any of these are true:
 
    A higher actual schema version is acceptable. A lower or missing version is a hard stop.
 
-7. Deploy the reviewed application commit.
-8. Perform the smoke checks below.
-9. Keep the release under observation before merging or deleting the release branch.
+7. Confirm `storage:provision` reports the expected bucket as public with WebP-only uploads and a 5 MB file limit.
+8. Deploy the reviewed application commit.
+9. Perform the smoke checks below.
+10. Keep the release under observation before merging or deleting the release branch.
 
 ## Production smoke checks
 
@@ -95,15 +98,18 @@ Use a designated test order and test records. Do not use a real customer order f
 - Update a menu test record and confirm the public state after refresh.
 - Move a test order through one valid transition.
 - Retry the same transition request with the same idempotency key and confirm it is replayed rather than duplicated.
+- Reuse that key for a different operation and confirm the API returns a conflict.
 - Attempt an invalid transition and confirm the API returns a conflict without changing the order.
-- Confirm `order_status_events` contains one event for the successful request.
+- Confirm `order_status_events` contains one event for each successful operation.
 - Confirm completing pickup requires operator confirmation in the UI.
 
 ### Image path
 
-- Upload a small test image to a test menu item.
+- Upload a small JPEG, PNG, WebP, or AVIF test image to a test menu item.
+- Confirm the stored object is normalized to WebP and bounded to 1600 pixels on its longest side.
 - Confirm the database records `image_url`, `image_path`, and `image_bucket`.
 - Confirm replacing the image removes the old object or emits a cleanup warning without losing the new image.
+- Submit invalid non-image bytes and confirm the request is rejected without creating a storage object.
 
 ## Rollback
 
@@ -127,6 +133,7 @@ Record:
 - Deployed commit SHA
 - Migration file and schema version
 - `db:preflight` output
+- `storage:provision` output
 - GitHub Actions run ID
 - Vercel deployment ID
 - Smoke-test results
