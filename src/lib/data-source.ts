@@ -27,106 +27,25 @@ export interface DashboardDataState {
   dataIssue: string | null;
 }
 
-const DEFAULT_IMAGE_BUCKET = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || "menu-images";
+const DEFAULT_IMAGE_BUCKET = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || "food pics";
 const ORDER_HISTORY_LIMIT = readBoundedIntegerEnv("MOGRILLZ_OPS_ORDER_HISTORY_LIMIT", 500, 50, 2000);
 const CUSTOMER_LIMIT = readBoundedIntegerEnv("MOGRILLZ_OPS_CUSTOMER_LIMIT", 1000, 50, 5000);
 const SUBSCRIBER_LIMIT = readBoundedIntegerEnv("MOGRILLZ_OPS_SUBSCRIBER_LIMIT", 1000, 50, 5000);
 const INSIGHT_LIMIT = readBoundedIntegerEnv("MOGRILLZ_OPS_INSIGHT_LIMIT", 50, 1, 250);
 
-const ORDER_SELECT = [
-  "id",
-  "order_number",
-  "customer_id",
-  "customer_name",
-  "customer_email",
-  "status",
-  "drop_day",
-  "service_date",
-  "fulfillment_method",
-  "delivery_window",
-  "zone",
-  "total_cents",
-  "custom_request",
-  "operator_note",
-  "payment_provider",
-  "payment_status",
-  "version",
-  "prep_started_at",
-  "ready_at",
-  "picked_up_at",
-  "cancelled_at",
-  "created_at",
-  "updated_at",
-  "order_items(id,order_id,menu_item_id,name,quantity,notes,unit_price_cents)",
-].join(",");
+const ORDER_SELECT = "id,order_number,customer_id,customer_name,customer_email,status,drop_day,service_date,fulfillment_method,delivery_window,zone,total_cents,custom_request,operator_note,payment_provider,payment_status,version,prep_started_at,ready_at,picked_up_at,cancelled_at,created_at,updated_at,order_items(id,order_id,menu_item_id,name,quantity,notes,unit_price_cents)";
+const INVENTORY_SELECT = "id,name,unit,on_hand_qty,par_level,status,notes,updated_at";
+const MENU_SELECT = "id,slug,name,category,price_cents,availability,allocation_limit,description,image_url,image_path,image_bucket,sort_order,is_featured,is_active,notes,calories,protein_g,carbs_g,fat_g,updated_at";
+const CUSTOMER_SELECT = "id,name,email,zone,total_orders,lifetime_value_cents,loyalty_tier,notes,updated_at";
+const INSIGHT_SELECT = "id,type,title,summary,confidence,action_text,created_at";
+const REMINDER_SELECT = "id,email,source,signup_location,status,notes,last_requested_at,created_at,updated_at";
 
-const INVENTORY_SELECT = [
-  "id",
-  "name",
-  "unit",
-  "on_hand_qty",
-  "par_level",
-  "status",
-  "notes",
-  "updated_at",
-].join(",");
+type Row = Record<string, unknown>;
+type SupabaseServerClient = NonNullable<ReturnType<typeof createSupabaseServerClient>>;
 
-const MENU_SELECT = [
-  "id",
-  "slug",
-  "name",
-  "category",
-  "price_cents",
-  "availability",
-  "allocation_limit",
-  "description",
-  "image_url",
-  "image_path",
-  "image_bucket",
-  "sort_order",
-  "is_featured",
-  "is_active",
-  "notes",
-  "calories",
-  "protein_g",
-  "carbs_g",
-  "fat_g",
-  "updated_at",
-].join(",");
-
-const CUSTOMER_SELECT = [
-  "id",
-  "name",
-  "email",
-  "zone",
-  "total_orders",
-  "lifetime_value_cents",
-  "loyalty_tier",
-  "notes",
-  "updated_at",
-].join(",");
-
-const INSIGHT_SELECT = [
-  "id",
-  "type",
-  "title",
-  "summary",
-  "confidence",
-  "action_text",
-  "created_at",
-].join(",");
-
-const REMINDER_SELECT = [
-  "id",
-  "email",
-  "source",
-  "signup_location",
-  "status",
-  "notes",
-  "last_requested_at",
-  "created_at",
-  "updated_at",
-].join(",");
+function asRows(value: unknown): Row[] {
+  return Array.isArray(value) ? (value as unknown as Row[]) : [];
+}
 
 function readBoundedIntegerEnv(name: string, fallback: number, min: number, max: number) {
   const parsed = Number(process.env[name]);
@@ -141,15 +60,11 @@ function shouldUseMockData() {
 
 function hasSupabaseDataConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const publishableKey =
+  const key =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
-
-  return Boolean(url && publishableKey);
+  return Boolean(url && key);
 }
-
-type Row = Record<string, unknown>;
-type SupabaseServerClient = NonNullable<ReturnType<typeof createSupabaseServerClient>>;
 
 function readString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -157,8 +72,7 @@ function readString(value: unknown, fallback = "") {
 
 function readNullableString(value: unknown) {
   if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return normalized || null;
+  return value.trim() || null;
 }
 
 function readNumber(value: unknown, fallback = 0) {
@@ -181,180 +95,112 @@ function capitalizeWords(value: string, fallback: string) {
 
 function normalizeMenuAvailability(value: unknown): MenuItem["availability"] {
   const raw = readString(value).trim().toLowerCase().replace(/[_-]+/g, " ");
-
-  if (!raw) return "Live";
   if (["live", "active", "available", "enabled", "true"].includes(raw)) return "Live";
   if (["watch", "draft", "pending"].includes(raw)) return "Watch";
   if (["paused", "pause", "inactive", "disabled", "false"].includes(raw)) return "Paused";
   if (["sold out", "soldout", "out", "unavailable"].includes(raw)) return "Sold Out";
-
   return "Live";
 }
 
 function resolveMenuAvailability(row: Row): MenuItem["availability"] {
-  const isActive = typeof row.is_active === "boolean" ? row.is_active : null;
   const availability = normalizeMenuAvailability(row.availability);
-
-  if (isActive === true) return "Live";
-  if (isActive === false && availability === "Live") return "Paused";
+  if (row.is_active === true) return "Live";
+  if (row.is_active === false && availability === "Live") return "Paused";
   return availability;
 }
 
 function resolveMenuImageUrl(client: SupabaseServerClient, row: Row) {
-  const imageUrl = readNullableString(row.image_url);
-  if (imageUrl) return imageUrl;
+  const stored = readNullableString(row.image_url);
+  if (stored) return stored;
 
-  const imagePath = readNullableString(row.image_path);
-  if (!imagePath) return null;
+  const path = readNullableString(row.image_path);
+  if (!path) return null;
 
-  const imageBucket = readNullableString(row.image_bucket) || DEFAULT_IMAGE_BUCKET;
-  return client.storage.from(imageBucket).getPublicUrl(imagePath).data.publicUrl || null;
-}
-
-function normalizeServiceDateValue(value: unknown) {
-  if (typeof value === "string") {
-    const raw = value.trim();
-    if (!raw) return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-
-    const prefix = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/)?.[1];
-    if (prefix) return prefix;
-
-    const parsed = new Date(raw);
-    if (Number.isFinite(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const parsed = new Date(value);
-    if (Number.isFinite(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-  }
-
-  return null;
-}
-
-function resolveServiceDate(row: Row) {
-  const candidates = [
-    row.service_date,
-    row.serviceDate,
-    row.pickup_date,
-    row.pickupDate,
-    row.fulfillment_date,
-    row.fulfillmentDate,
-  ];
-
-  for (const candidate of candidates) {
-    const normalized = normalizeServiceDateValue(candidate);
-    if (normalized) return normalized;
-  }
-
-  return null;
-}
-
-function resolveServiceWindow(row: Row) {
-  const candidates = [
-    row.delivery_window,
-    row.service_window,
-    row.serviceWindow,
-    row.pickup_window,
-    row.pickupWindow,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate !== "string") continue;
-    const raw = candidate.trim();
-    if (raw) return raw;
-  }
-
-  return "Pickup details confirmed after checkout";
+  const bucket = readNullableString(row.image_bucket) || DEFAULT_IMAGE_BUCKET;
+  return client.storage.from(bucket).getPublicUrl(path).data.publicUrl || null;
 }
 
 function mapOrderItem(row: Row): OrderItem {
   return {
     id: readString(row.id, crypto.randomUUID()),
     orderId: readString(row.order_id),
-    menuItemId: typeof row.menu_item_id === "string" ? row.menu_item_id : null,
+    menuItemId: readNullableString(row.menu_item_id),
     name: readString(row.name, "Unknown Item"),
     quantity: readNumber(row.quantity, 1),
-    notes: typeof row.notes === "string" ? row.notes : null,
-    unitPriceCents: readNumber(row.unit_price_cents, 0),
+    notes: readNullableString(row.notes),
+    unitPriceCents: readNumber(row.unit_price_cents),
   };
 }
 
 function mapOrder(row: Row): Order {
-  const nestedItems = Array.isArray(row.order_items) ? row.order_items : [];
-  const fulfillmentMethod =
-    readString(row.fulfillment_method, "pickup").toLowerCase() === "delivery"
-      ? "delivery"
-      : "pickup";
   const id = readString(row.id, crypto.randomUUID());
   const createdAt = readString(row.created_at, new Date().toISOString());
-
   return {
     id,
     orderNumber: readString(row.order_number, id),
     customerName: readString(row.customer_name, "Unknown Customer"),
-    customerEmail: typeof row.customer_email === "string" ? row.customer_email : null,
+    customerEmail: readNullableString(row.customer_email),
     customerZone: readString(row.zone, "Northern Virginia"),
     status: normalizeOrderStatus(row.status) ?? "New",
-    serviceDate: resolveServiceDate(row),
-    legacyDropDay:
-      typeof row.drop_day === "string" ? capitalizeWords(readString(row.drop_day), "") : null,
-    fulfillmentMethod,
-    serviceWindow: resolveServiceWindow(row),
-    totalCents: readNumber(row.total_cents, 0),
-    customRequest: typeof row.custom_request === "string" ? row.custom_request : null,
-    operatorNote: typeof row.operator_note === "string" ? row.operator_note : null,
+    serviceDate: readNullableString(row.service_date),
+    legacyDropDay: readNullableString(row.drop_day),
+    fulfillmentMethod:
+      readString(row.fulfillment_method, "pickup").toLowerCase() === "delivery"
+        ? "delivery"
+        : "pickup",
+    serviceWindow: readString(
+      row.delivery_window,
+      "Pickup details confirmed after checkout",
+    ),
+    totalCents: readNumber(row.total_cents),
+    customRequest: readNullableString(row.custom_request),
+    operatorNote: readNullableString(row.operator_note),
     paymentProvider: readString(row.payment_provider, "Stripe"),
     paymentStatus: readString(row.payment_status, "unpaid"),
-    version: readNumber(row.version, 0),
+    version: readNumber(row.version),
     prepStartedAt: readNullableString(row.prep_started_at),
     readyAt: readNullableString(row.ready_at),
     pickedUpAt: readNullableString(row.picked_up_at),
     cancelledAt: readNullableString(row.cancelled_at),
     createdAt,
     updatedAt: readString(row.updated_at, createdAt),
-    items: nestedItems.map((item) => mapOrderItem(item as Row)),
+    items: asRows(row.order_items).map(mapOrderItem),
   };
 }
 
-function mapInventoryItem(row: Row, linkedMenuItems: InventoryLinkedMenuItem[] = []): InventoryItem {
+function mapInventoryItem(row: Row, linkedMenuItems: InventoryLinkedMenuItem[]): InventoryItem {
   return {
     id: readString(row.id, crypto.randomUUID()),
     name: readString(row.name, "Unknown Inventory Item"),
     unit: readString(row.unit, "units"),
-    onHand: readNumber(row.on_hand_qty, 0),
-    parLevel: readNumber(row.par_level, 0),
+    onHand: readNumber(row.on_hand_qty),
+    parLevel: readNumber(row.par_level),
     status: capitalizeWords(readString(row.status), "Watch") as InventoryItem["status"],
     lastUpdatedAt: readString(row.updated_at, new Date().toISOString()),
-    notes: typeof row.notes === "string" ? row.notes : null,
+    notes: readNullableString(row.notes),
     linkedMenuItems,
   };
 }
 
-function mapMenuItem(
-  client: SupabaseServerClient,
-  row: Row,
-): MenuItem {
+function mapMenuItem(client: SupabaseServerClient, row: Row): MenuItem {
   const slug = readString(row.slug, readString(row.id, crypto.randomUUID()));
-  const storedImageUrl = readNullableString(row.image_url);
-
   return {
     id: readString(row.id, slug),
     slug,
     name: readString(row.name, "Unknown Menu Item"),
     category: readString(row.category, "Menu"),
-    priceCents: readNumber(row.price_cents, 0),
+    priceCents: readNumber(row.price_cents),
     availability: resolveMenuAvailability(row),
-    allocationLimit: readNumber(row.allocation_limit, 0),
-    description: readString(row.description, ""),
+    allocationLimit: readNumber(row.allocation_limit),
+    description: readString(row.description),
     imageUrl: resolveMenuImageUrl(client, row),
-    storedImageUrl,
+    storedImageUrl: readNullableString(row.image_url),
     imagePath: readNullableString(row.image_path),
     imageBucket: readNullableString(row.image_bucket),
-    sortOrder: readNumber(row.sort_order, 0),
-    isFeatured: Boolean(row.is_featured),
+    sortOrder: readNumber(row.sort_order),
+    isFeatured: row.is_featured === true,
     isActive: typeof row.is_active === "boolean" ? row.is_active : null,
-    notes: typeof row.notes === "string" ? row.notes : null,
+    notes: readNullableString(row.notes),
     calories: row.calories == null ? null : readNumber(row.calories),
     proteinG: row.protein_g == null ? null : readNumber(row.protein_g),
     carbsG: row.carbs_g == null ? null : readNumber(row.carbs_g),
@@ -367,12 +213,12 @@ function mapCustomer(row: Row): Customer {
   return {
     id: readString(row.id, crypto.randomUUID()),
     name: readString(row.name, "Unknown Customer"),
-    email: typeof row.email === "string" ? row.email : null,
+    email: readNullableString(row.email),
     zone: readString(row.zone, "Northern Virginia"),
-    totalOrders: readNumber(row.total_orders, 0),
-    lifetimeValueCents: readNumber(row.lifetime_value_cents, 0),
+    totalOrders: readNumber(row.total_orders),
+    lifetimeValueCents: readNumber(row.lifetime_value_cents),
     loyaltyTier: (loyalty === "New" ? "Early" : loyalty) as Customer["loyaltyTier"],
-    notes: typeof row.notes === "string" ? row.notes : null,
+    notes: readNullableString(row.notes),
     lastOrderAt: readString(row.updated_at, new Date().toISOString()),
   };
 }
@@ -383,9 +229,9 @@ function mapEmailUpdate(row: Row): EmailUpdate {
     id: readString(row.id, crypto.randomUUID()),
     email: readString(row.email),
     source: readString(row.source, "website"),
-    signupLocation: typeof row.signup_location === "string" ? row.signup_location : null,
+    signupLocation: readNullableString(row.signup_location),
     status: capitalizeWords(readString(row.status), "Active") as EmailUpdate["status"],
-    notes: typeof row.notes === "string" ? row.notes : null,
+    notes: readNullableString(row.notes),
     lastRequestedAt: readString(row.last_requested_at, createdAt),
     createdAt,
     updatedAt: readString(row.updated_at, createdAt),
@@ -405,21 +251,20 @@ function mapInsight(row: Row): Insight {
     content_angle: "content",
   };
   const type = typeMap[rawType] ?? "ops";
-  const toneByType: Record<Insight["type"], Insight["tone"]> = {
+  const tones: Record<Insight["type"], Insight["tone"]> = {
     prep: "success",
     demand: "warning",
     ops: "danger",
     content: "info",
   };
-
   return {
     id: readString(row.id, crypto.randomUUID()),
     type,
     title: readString(row.title, "Untitled Insight"),
-    summary: readString(row.summary, ""),
-    confidence: readNumber(row.confidence, 0),
+    summary: readString(row.summary),
+    confidence: readNumber(row.confidence),
     actionText: readString(row.action_text, "No action recorded."),
-    tone: toneByType[type],
+    tone: tones[type],
     createdAt: readString(row.created_at, new Date().toISOString()),
   };
 }
@@ -434,14 +279,9 @@ function formatCompactCurrency(cents: number) {
 
 function formatServiceDateLabel(serviceDate: string | null) {
   if (!serviceDate) return "Unscheduled";
-
   const parsed = new Date(`${serviceDate}T12:00:00`);
   if (!Number.isFinite(parsed.getTime())) return "Unscheduled";
-
-  return parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function deriveOperationsSnapshot(orders: Order[]): DashboardSnapshot["operations"] {
@@ -459,7 +299,13 @@ function deriveOperationsSnapshot(orders: Order[]): DashboardSnapshot["operation
   }
 
   const businessDate = getBusinessDate();
-  const futureDates = [...new Set(activeOrders.map((order) => order.serviceDate).filter(Boolean) as string[])]
+  const futureDates = Array.from(
+    new Set(
+      activeOrders
+        .map((order) => order.serviceDate)
+        .filter((date): date is string => Boolean(date)),
+    ),
+  )
     .filter((date) => date >= businessDate)
     .sort();
   const selectedDate = futureDates[0] ?? null;
@@ -467,7 +313,9 @@ function deriveOperationsSnapshot(orders: Order[]): DashboardSnapshot["operation
     ? activeOrders.filter((order) => order.serviceDate === selectedDate)
     : activeOrders.filter((order) => !order.serviceDate);
   const operationalOrders = selectedOrders.length ? selectedOrders : activeOrders;
-  const windows = [...new Set(operationalOrders.map((order) => order.serviceWindow).filter(Boolean))];
+  const windows = Array.from(
+    new Set(operationalOrders.map((order) => order.serviceWindow).filter(Boolean)),
+  );
 
   return {
     serviceDateLabel: formatServiceDateLabel(selectedDate),
@@ -544,33 +392,13 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
       inventoryLinksResponse,
       remindersResponse,
     ] = await Promise.all([
-      client
-        .from("orders")
-        .select(ORDER_SELECT)
-        .order("created_at", { ascending: false })
-        .limit(ORDER_HISTORY_LIMIT),
+      client.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false }).limit(ORDER_HISTORY_LIMIT),
       client.from("inventory_items").select(INVENTORY_SELECT).order("name").limit(1000),
       client.from("menu_items").select(MENU_SELECT).order("sort_order").limit(1000),
-      client
-        .from("customers")
-        .select(CUSTOMER_SELECT)
-        .order("updated_at", { ascending: false })
-        .limit(CUSTOMER_LIMIT),
-      client
-        .from("insights")
-        .select(INSIGHT_SELECT)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(INSIGHT_LIMIT),
-      client
-        .from("inventory_item_menu_links")
-        .select("inventory_item_id,menu_item_id")
-        .limit(5000),
-      client
-        .from("drop_reminders")
-        .select(REMINDER_SELECT)
-        .order("last_requested_at", { ascending: false })
-        .limit(SUBSCRIBER_LIMIT),
+      client.from("customers").select(CUSTOMER_SELECT).order("updated_at", { ascending: false }).limit(CUSTOMER_LIMIT),
+      client.from("insights").select(INSIGHT_SELECT).eq("is_active", true).order("created_at", { ascending: false }).limit(INSIGHT_LIMIT),
+      client.from("inventory_item_menu_links").select("inventory_item_id,menu_item_id").limit(5000),
+      client.from("drop_reminders").select(REMINDER_SELECT).order("last_requested_at", { ascending: false }).limit(SUBSCRIBER_LIMIT),
     ]);
 
     const criticalErrors = [
@@ -578,11 +406,7 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
       ["inventory", inventoryResponse.error],
       ["menu", menuResponse.error],
     ] as const;
-
-    for (const [section, error] of criticalErrors) {
-      if (error) logQueryError(section, error);
-    }
-
+    for (const [section, error] of criticalErrors) logQueryError(section, error);
     if (criticalErrors.some(([, error]) => Boolean(error))) return null;
 
     logQueryError("customers", customersResponse.error);
@@ -590,54 +414,41 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
     logQueryError("inventory-links", inventoryLinksResponse.error);
     logQueryError("subscribers", remindersResponse.error);
 
-    const orders = (ordersResponse.data ?? []).map((row) => mapOrder(row as Row));
-    const menuRows = (menuResponse.data ?? []) as Row[];
+    const orders = asRows(ordersResponse.data).map(mapOrder);
+    const menuRows = asRows(menuResponse.data);
     const menu = menuRows.map((row) => mapMenuItem(client, row));
-    const menuByDatabaseId = new Map(
+    const menuById = new Map(
       menuRows.map((row) => {
-        const databaseId = readString(row.id);
-        return [
-          databaseId,
-          {
-            id: databaseId || crypto.randomUUID(),
-            name: readString(row.name, "Unknown Menu Item"),
-          },
-        ];
+        const id = readString(row.id);
+        return [id, { id: id || crypto.randomUUID(), name: readString(row.name, "Unknown Menu Item") }];
       }),
     );
-    const linkedMenuItemsByInventoryId = new Map<string, InventoryLinkedMenuItem[]>();
+    const linkedByInventoryId = new Map<string, InventoryLinkedMenuItem[]>();
 
     if (!inventoryLinksResponse.error) {
-      for (const row of inventoryLinksResponse.data ?? []) {
-        const inventoryItemId =
-          typeof row.inventory_item_id === "string" ? row.inventory_item_id : "";
-        const menuItemId = typeof row.menu_item_id === "string" ? row.menu_item_id : "";
-        if (!inventoryItemId || !menuItemId) continue;
-
-        const menuItem = menuByDatabaseId.get(menuItemId);
-        if (!menuItem) continue;
-
-        const existing = linkedMenuItemsByInventoryId.get(inventoryItemId) ?? [];
-        existing.push({ id: menuItem.id, name: menuItem.name });
-        linkedMenuItemsByInventoryId.set(inventoryItemId, existing);
+      for (const row of asRows(inventoryLinksResponse.data)) {
+        const inventoryItemId = readString(row.inventory_item_id);
+        const menuItemId = readString(row.menu_item_id);
+        const linked = menuById.get(menuItemId);
+        if (!inventoryItemId || !linked) continue;
+        const existing = linkedByInventoryId.get(inventoryItemId) ?? [];
+        existing.push(linked);
+        linkedByInventoryId.set(inventoryItemId, existing);
       }
     }
 
-    const inventory = (inventoryResponse.data ?? []).map((row) =>
-      mapInventoryItem(
-        row as Row,
-        linkedMenuItemsByInventoryId.get(readString((row as Row).id)) ?? [],
-      ),
+    const inventory = asRows(inventoryResponse.data).map((row) =>
+      mapInventoryItem(row, linkedByInventoryId.get(readString(row.id)) ?? []),
     );
     const customers = customersResponse.error
       ? []
-      : (customersResponse.data ?? []).map((row) => mapCustomer(row as Row));
+      : asRows(customersResponse.data).map(mapCustomer);
     const emailUpdates = remindersResponse.error
       ? []
-      : (remindersResponse.data ?? []).map((row) => mapEmailUpdate(row as Row));
+      : asRows(remindersResponse.data).map(mapEmailUpdate);
     const insights = insightsResponse.error
       ? []
-      : (insightsResponse.data ?? []).map((row) => mapInsight(row as Row));
+      : asRows(insightsResponse.data).map(mapInsight);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -660,11 +471,7 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
 
 export async function loadDashboardDataState(): Promise<DashboardDataState> {
   if (shouldUseMockData()) {
-    return {
-      snapshot: cloneMockSnapshot(),
-      dataSource: "mock",
-      dataIssue: null,
-    };
+    return { snapshot: cloneMockSnapshot(), dataSource: "mock", dataIssue: null };
   }
 
   if (!hasSupabaseDataConfig()) {
@@ -677,25 +484,18 @@ export async function loadDashboardDataState(): Promise<DashboardDataState> {
   }
 
   const remote = await tryRemoteSnapshot();
-  if (remote) {
-    return {
-      snapshot: remote,
-      dataSource: "supabase",
-      dataIssue: null,
-    };
-  }
+  if (remote) return { snapshot: remote, dataSource: "supabase", dataIssue: null };
 
   return {
     snapshot: null,
     dataSource: "supabase",
     dataIssue:
-      "Critical operations data could not be loaded. Check the deployment logs and verify the required database migration is applied.",
+      "Critical operations data could not be loaded. Check deployment logs and verify the required database migration is applied.",
   };
 }
 
 export async function loadDashboardSnapshot(): Promise<DashboardSnapshot> {
   const result = await loadDashboardDataState();
-
   if (result.snapshot) return result.snapshot;
   throw new Error(result.dataIssue ?? "Dashboard data unavailable.");
 }
