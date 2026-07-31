@@ -59,7 +59,7 @@ export async function userHasAdminMembership(client: SupabaseClient, userId: str
       .maybeSingle();
 
     if (error || !data) return false;
-    return matchesAdminMembership(data as Record<string, unknown>, config, userId);
+    return matchesAdminMembership(data as unknown as Record<string, unknown>, config, userId);
   } catch {
     return false;
   }
