@@ -1,48 +1,86 @@
 import { NextResponse } from "next/server";
 
-import {
-  canCancelOrderStatus,
-  getNextOrderStatus,
-  isValidOrderStatusTransition,
-  normalizeOrderStatus,
-} from "@/lib/dashboard/order-status";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { userHasAdminMembership } from "@/lib/supabase/access";
+import { normalizeOrderStatus } from "@/lib/dashboard/order-status";
+import { requireAdminRouteContext } from "@/lib/supabase/admin-context";
 import type { OrderStatus } from "@/types/domain";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
+type TransitionResult = {
+  success?: boolean;
+  error?: string;
+  id?: string;
+  status?: string;
+  current_status?: string;
+  requested_status?: string;
+  version?: number;
+  request_id?: string;
+  replayed?: boolean;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function readRequestedStatus(value: unknown): OrderStatus | null {
   return normalizeOrderStatus(value);
+}
+
+function readRequestId(request: Request) {
+  const candidate = request.headers.get("idempotency-key")?.trim();
+  return candidate && UUID_PATTERN.test(candidate) ? candidate : crypto.randomUUID();
+}
+
+function transitionFailureResponse(result: TransitionResult, requestId: string) {
+  switch (result.error) {
+    case "not_found":
+      return NextResponse.json({ error: "Order not found.", requestId }, { status: 404 });
+    case "conflict":
+      return NextResponse.json(
+        {
+          error: "This order changed before your update completed. Refresh and try again.",
+          currentStatus: normalizeOrderStatus(result.current_status),
+          version: result.version,
+          requestId,
+        },
+        { status: 409 },
+      );
+    case "invalid_transition":
+      return NextResponse.json(
+        {
+          error: "That order status transition is no longer allowed.",
+          currentStatus: normalizeOrderStatus(result.current_status),
+          requestedStatus: normalizeOrderStatus(result.requested_status),
+          version: result.version,
+          requestId,
+        },
+        { status: 409 },
+      );
+    case "invalid_status":
+      return NextResponse.json({ error: "Invalid order status.", requestId }, { status: 400 });
+    case "unauthorized":
+      return NextResponse.json({ error: "Unauthorized.", requestId }, { status: 401 });
+    case "forbidden":
+      return NextResponse.json({ error: "Forbidden.", requestId }, { status: 403 });
+    default:
+      return NextResponse.json(
+        { error: "Failed to update order status.", requestId },
+        { status: 500 },
+      );
+  }
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const orderId = id?.trim();
+  const requestId = readRequestId(request);
 
   if (!orderId) {
-    return NextResponse.json({ error: "Missing order id." }, { status: 400 });
+    return NextResponse.json({ error: "Missing order id.", requestId }, { status: 400 });
   }
 
-  const supabase = createSupabaseServerClient();
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase is not configured." }, { status: 500 });
-  }
-
-  const claimsResult = await supabase.auth.getClaims();
-  const userId = typeof claimsResult.data?.claims?.sub === "string" ? claimsResult.data.claims.sub : null;
-
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
-
-  const isAdmin = await userHasAdminMembership(supabase, userId);
-  if (!isAdmin) {
-    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
-  }
+  const authResult = await requireAdminRouteContext();
+  if (!authResult.ok) return authResult.response;
 
   let requestedStatus: OrderStatus | null;
 
@@ -50,63 +88,58 @@ export async function PATCH(request: Request, context: RouteContext) {
     const body = await request.json();
     requestedStatus = readRequestedStatus(body?.status);
   } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid request body.", requestId }, { status: 400 });
   }
 
   if (!requestedStatus) {
-    return NextResponse.json({ error: "Invalid order status." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid order status.", requestId }, { status: 400 });
   }
 
-  const adminClient = createSupabaseAdminClient();
-  if (!adminClient) {
-    return NextResponse.json({ error: "Supabase admin client is not configured." }, { status: 500 });
-  }
+  const { data, error } = await authResult.context.supabase.rpc("transition_order_status", {
+    p_order_id: orderId,
+    p_next_status: requestedStatus,
+    p_request_id: requestId,
+  });
 
-  const currentOrderResult = await adminClient
-    .from("orders")
-    .select("id,status")
-    .eq("id", orderId)
-    .single();
-
-  if (currentOrderResult.error || !currentOrderResult.data) {
-    return NextResponse.json({ error: "Order not found." }, { status: 404 });
-  }
-
-  const currentStatus = normalizeOrderStatus(currentOrderResult.data.status);
-  if (!currentStatus) {
-    return NextResponse.json({ error: "Order has an unsupported status." }, { status: 400 });
-  }
-
-  const nextAllowedStatus = getNextOrderStatus(currentStatus);
-  const canCancel = canCancelOrderStatus(currentStatus);
-  if (!isValidOrderStatusTransition(currentStatus, requestedStatus)) {
-    const allowedTransitions = [
-      nextAllowedStatus ? `${currentStatus} -> ${nextAllowedStatus}` : null,
-      canCancel ? `${currentStatus} -> Cancelled` : null,
-    ].filter(Boolean);
+  if (error) {
+    console.error("[api/orders/status] transition RPC failed", {
+      orderId,
+      requestId,
+      code: error.code,
+      message: error.message,
+    });
     return NextResponse.json(
       {
-        error: allowedTransitions.length
-          ? `Only ${allowedTransitions.join(" or ")} is allowed.`
-          : "No further status transition is allowed.",
+        error: "Order status could not be updated. Verify the operations database migration is applied.",
+        requestId,
       },
-      { status: 400 },
+      { status: 500 },
     );
   }
 
-  const updateResult = await adminClient
-    .from("orders")
-    .update({ status: requestedStatus })
-    .eq("id", orderId)
-    .select("id,status")
-    .single();
+  const result = (data ?? {}) as TransitionResult;
+  if (!result.success) {
+    return transitionFailureResponse(result, requestId);
+  }
 
-  if (updateResult.error || !updateResult.data) {
-    return NextResponse.json({ error: "Failed to update order status." }, { status: 500 });
+  const normalizedStatus = normalizeOrderStatus(result.status);
+  if (!normalizedStatus || !result.id) {
+    console.error("[api/orders/status] transition returned an invalid payload", {
+      orderId,
+      requestId,
+      result,
+    });
+    return NextResponse.json(
+      { error: "Order status update returned an invalid result.", requestId },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({
-    id: updateResult.data.id,
-    status: updateResult.data.status,
+    id: result.id,
+    status: normalizedStatus,
+    version: result.version,
+    requestId,
+    replayed: result.replayed === true,
   });
 }
