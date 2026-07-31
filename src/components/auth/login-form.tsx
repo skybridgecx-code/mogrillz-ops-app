@@ -1,16 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
 
-import { createSupabaseBrowserClient, isSupabaseBrowserConfigured } from "@/lib/supabase/client";
 import styles from "@/app/login/page.module.css";
+import { createSupabaseBrowserClient, isSupabaseBrowserConfigured } from "@/lib/supabase/client";
 
 type SubmitState = {
   email: string;
   password: string;
-  remember: boolean;
 };
 
 type LoginFormProps = {
@@ -29,7 +28,6 @@ export function LoginForm({ authReady }: LoginFormProps) {
   const [form, setForm] = useState<SubmitState>({
     email: "",
     password: "",
-    remember: true,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -95,13 +93,13 @@ export function LoginForm({ authReady }: LoginFormProps) {
         </div>
 
         <p className={styles.copy}>
-          Sign in to review live orders, inventory pressure, menu controls, and AI guidance without exposing the operator app.
+          Sign in to review live orders, inventory pressure, menu controls, and operational guidance without exposing the operator app.
         </p>
 
         <div className={styles.surfaceRow}>
           <div className={styles.surface}>
             <span className={styles.surfaceLabel}>Service model</span>
-            <strong>Always open pickup</strong>
+            <strong>Pickup operations</strong>
           </div>
           <div className={styles.surface}>
             <span className={styles.surfaceLabel}>Access</span>
@@ -119,11 +117,13 @@ export function LoginForm({ authReady }: LoginFormProps) {
           <label className={styles.field}>
             <span>Email</span>
             <input
+              autoCapitalize="none"
               autoComplete="email"
               inputMode="email"
               name="email"
               onChange={(event) => updateField("email", event.target.value)}
-              placeholder="chefmo@mogrillzva.com"
+              placeholder="owner@example.com"
+              spellCheck={false}
               type="email"
               value={form.email}
             />
@@ -148,15 +148,6 @@ export function LoginForm({ authReady }: LoginFormProps) {
                 {showPassword ? "Hide" : "Show"}
               </button>
             </div>
-          </label>
-
-          <label className={styles.checkRow}>
-            <input
-              checked={form.remember}
-              onChange={(event) => updateField("remember", event.target.checked)}
-              type="checkbox"
-            />
-            <span>Keep me signed in on this device</span>
           </label>
 
           <div aria-atomic="true" aria-live="polite" className={styles.messageStack}>
