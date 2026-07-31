@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-const REQUIRED_SCHEMA_VERSION = 2026073001;
+const REQUIRED_SCHEMA_VERSION = 2026073002;
 
 function requiredEnv(name) {
   const value = process.env[name]?.trim();
