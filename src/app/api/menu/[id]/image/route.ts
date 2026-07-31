@@ -67,7 +67,11 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   const requestId = crypto.randomUUID();
-  const authResult = await requireAdminRouteContext({ requireServiceRole: true });
+  const authResult = await requireAdminRouteContext({
+    request,
+    contentType: "multipart",
+    requireServiceRole: true,
+  });
   if (!authResult.ok) return authResult.response;
 
   const storageClient = authResult.context.adminClient;
