@@ -1,20 +1,15 @@
 name: Dependency Refresh
 
 on:
-  push:
-    branches:
-      - agent/ops-hardening-phase-0-1a
-    paths:
-      - package.json
-      - package-lock.json
-      - .github/workflows/dependency-refresh.yml
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   refresh:
-    if: github.event.head_commit.message != 'chore: refresh dependency lock'
+    if: github.head_ref == 'agent/ops-hardening-phase-0-1a'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
