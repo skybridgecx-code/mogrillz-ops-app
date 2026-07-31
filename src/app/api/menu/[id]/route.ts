@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { userHasAdminMembership } from "@/lib/supabase/access";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  requireAdminRouteContext,
+  type AdminRouteContext,
+} from "@/lib/supabase/admin-context";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
 const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
@@ -207,39 +208,13 @@ function readMenuPayload(body: unknown): MenuPayload {
   return payload;
 }
 
-async function requireAdmin() {
-  const supabase = createSupabaseServerClient();
-  if (!supabase) {
-    return { error: NextResponse.json({ error: "Supabase is not configured." }, { status: 500 }) };
-  }
-
-  const claimsResult = await supabase.auth.getClaims();
-  const userId = typeof claimsResult.data?.claims?.sub === "string" ? claimsResult.data.claims.sub : null;
-
-  if (!userId) {
-    return { error: NextResponse.json({ error: "Unauthorized." }, { status: 401 }) };
-  }
-
-  const isAdmin = await userHasAdminMembership(supabase, userId);
-  if (!isAdmin) {
-    return { error: NextResponse.json({ error: "Forbidden." }, { status: 403 }) };
-  }
-
-  const adminClient = createSupabaseAdminClient();
-  if (!adminClient) {
-    return { error: NextResponse.json({ error: "Supabase admin client is not configured." }, { status: 500 }) };
-  }
-
-  return { adminClient };
-}
-
-async function resolveMenuId(adminClient: ReturnType<typeof createSupabaseAdminClient>, key: string) {
-  if (!adminClient) return null;
-
-  const bySlug = await adminClient.from("menu_items").select("id").eq("slug", key).maybeSingle();
+async function resolveMenuId(client: AdminRouteContext["supabase"], key: string) {
+  const bySlug = await client.from("menu_items").select("id").eq("slug", key).maybeSingle();
+  if (bySlug.error) return null;
   if (bySlug.data?.id) return bySlug.data.id as string;
 
-  const byId = await adminClient.from("menu_items").select("id").eq("id", key).maybeSingle();
+  const byId = await client.from("menu_items").select("id").eq("id", key).maybeSingle();
+  if (byId.error) return null;
   if (byId.data?.id) return byId.data.id as string;
 
   return null;
@@ -253,8 +228,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Missing menu item id." }, { status: 400 });
   }
 
-  const authResult = await requireAdmin();
-  if ("error" in authResult) return authResult.error;
+  const authResult = await requireAdminRouteContext();
+  if (!authResult.ok) return authResult.response;
 
   let payload: MenuPayload;
 
@@ -265,23 +240,33 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const resolvedMenuId = await resolveMenuId(authResult.adminClient, menuKey);
+  const client = authResult.context.supabase;
+  const resolvedMenuId = await resolveMenuId(client, menuKey);
   if (!resolvedMenuId) {
     return NextResponse.json({ error: "Menu item not found." }, { status: 404 });
   }
 
-  const conflictResult = await authResult.adminClient
+  const conflictResult = await client
     .from("menu_items")
     .select("id")
     .eq("slug", payload.slug)
     .neq("id", resolvedMenuId)
     .maybeSingle();
 
+  if (conflictResult.error) {
+    console.error("[api/menu/[id]] slug conflict check failed", {
+      menuKey,
+      code: conflictResult.error.code,
+      message: conflictResult.error.message,
+    });
+    return NextResponse.json({ error: "Failed to validate the menu item slug." }, { status: 500 });
+  }
+
   if (conflictResult.data?.id) {
     return NextResponse.json({ error: "Slug is already in use." }, { status: 409 });
   }
 
-  let updateResult = await authResult.adminClient
+  let updateResult = await client
     .from("menu_items")
     .update(payload)
     .eq("id", resolvedMenuId)
@@ -289,7 +274,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     .single();
 
   if (updateResult.error && isMissingOptionalMenuColumn(updateResult.error)) {
-    updateResult = await authResult.adminClient
+    updateResult = await client
       .from("menu_items")
       .update(stripOptionalMenuColumns(payload))
       .eq("id", resolvedMenuId)
@@ -298,7 +283,11 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   if (updateResult.error || !updateResult.data) {
-    console.error("[api/menu/[id]] update failed:", updateResult.error);
+    console.error("[api/menu/[id]] update failed", {
+      menuKey,
+      code: updateResult.error?.code,
+      message: updateResult.error?.message,
+    });
     return NextResponse.json({ error: "Failed to update menu item." }, { status: 500 });
   }
 
