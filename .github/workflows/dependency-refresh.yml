@@ -1,0 +1,58 @@
+name: Dependency Refresh
+
+on:
+  push:
+    branches:
+      - agent/ops-hardening-phase-0-1a
+    paths:
+      - package.json
+      - package-lock.json
+      - .github/workflows/dependency-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.event.head_commit.message != 'chore: refresh dependency lock'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_USE_MOCK_DATA: "true"
+
+    steps:
+      - name: Check out hardening branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/ops-hardening-phase-0-1a
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Resolve patched dependency graph
+        run: |
+          npm install --package-lock-only --ignore-scripts next@16.2.12 eslint-config-next@16.2.12
+          npm audit fix --package-lock-only --ignore-scripts
+
+      - name: Verify production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Validate refreshed graph
+        run: |
+          npm ci
+          npm run check
+
+      - name: Commit refreshed manifests
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "Dependency manifests already resolved."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: refresh dependency lock"
+          git push origin HEAD:agent/ops-hardening-phase-0-1a
