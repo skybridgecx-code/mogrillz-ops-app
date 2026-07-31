@@ -2,6 +2,10 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 
+import {
+  validateMutationRequest,
+  type MutationContentType,
+} from "@/lib/http/mutation-request";
 import { userHasAdminMembership } from "@/lib/supabase/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -19,9 +23,29 @@ type AdminContextResult =
   | { ok: true; context: AdminRouteContext }
   | { ok: false; response: NextResponse };
 
+type AdminContextOptions = {
+  request: Request;
+  contentType: MutationContentType;
+  requireServiceRole?: boolean;
+};
+
 export async function requireAdminRouteContext(
-  options: { requireServiceRole?: boolean } = {},
+  options: AdminContextOptions,
 ): Promise<AdminContextResult> {
+  const requestValidation = validateMutationRequest(options.request, options.contentType);
+  if (!requestValidation.ok) {
+    const status = requestValidation.reason === "content-type" ? 415 : 403;
+    const error =
+      requestValidation.reason === "content-type"
+        ? "Unsupported request content type."
+        : "Cross-origin mutation requests are forbidden.";
+
+    return {
+      ok: false,
+      response: NextResponse.json({ error }, { status }),
+    };
+  }
+
   const supabase = createSupabaseServerClient();
   if (!supabase) {
     return {
