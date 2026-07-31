@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AnalyticsView } from "@/components/dashboard/views/analytics-view";
 import { CustomersView } from "@/components/dashboard/views/customers-view";
@@ -14,6 +14,8 @@ import { isActiveOrder, timeAgo } from "@/lib/dashboard/format";
 import type { DashboardSnapshot, MenuItem, Order } from "@/types/domain";
 
 type DataSourceKind = "mock" | "supabase";
+type MutationPayload = { error?: string; id?: string; requestId?: string };
+type MutationOptions = { retryOnNetworkError?: boolean };
 
 export type ViewKey = "today" | "orders" | "inventory" | "menu" | "customers" | "analytics";
 
@@ -60,6 +62,19 @@ const VIEW_TITLES: Record<ViewKey, string> = {
   customers: "Customers",
   analytics: "Analytics",
 };
+
+function readExternalHttpsUrl(value: string | undefined) {
+  if (!value?.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+const PUBLIC_SITE_URL = readExternalHttpsUrl(process.env.NEXT_PUBLIC_SHAMAS_KITCHEN_SITE_URL);
+const SOCIAL_AGENT_URL = readExternalHttpsUrl(process.env.NEXT_PUBLIC_SHAMAS_KITCHEN_SOCIAL_AGENT_URL);
 
 const EMPTY_SNAPSHOT: DashboardSnapshot = {
   generatedAt: new Date(0).toISOString(),
@@ -119,24 +134,45 @@ function DashboardInner({
 
   const goTo = useCallback((next: ViewKey) => {
     setView(next);
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", `#${next}`);
-      window.scrollTo({ top: 0 });
-    }
+    window.history.replaceState(null, "", `#${next}`);
+    window.scrollTo({ top: 0 });
   }, []);
 
-  /* -------- Mutations -------- */
-
   const patchJson = useCallback(
-    async (url: string, method: string, body: unknown, successMessage: string) => {
-      try {
-        const response = await fetch(url, {
+    async (
+      url: string,
+      method: string,
+      body: unknown,
+      successMessage: string,
+      options: MutationOptions = {},
+    ) => {
+      const idempotencyKey = crypto.randomUUID();
+      const execute = () =>
+        fetch(url, {
           method,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+          },
           body: JSON.stringify(body),
         });
-        const payload = (await response.json().catch(() => null)) as { error?: string; id?: string } | null;
-        if (!response.ok) throw new Error(payload?.error || "Something went wrong.");
+
+      try {
+        let response: Response;
+        try {
+          response = await execute();
+        } catch (error) {
+          if (!options.retryOnNetworkError) throw error;
+          response = await execute();
+        }
+
+        const payload = (await response.json().catch(() => null)) as MutationPayload | null;
+        if (!response.ok) {
+          if (response.status === 409) router.refresh();
+          const reference = payload?.requestId ? ` Reference: ${payload.requestId}.` : "";
+          throw new Error(`${payload?.error || "Something went wrong."}${reference}`);
+        }
+
         toast(successMessage, "success");
         router.refresh();
         return payload;
@@ -152,14 +188,42 @@ function DashboardInner({
     () => ({
       advanceOrder: async (orderId, nextStatus) => {
         const label = nextStatus === "Cancelled" ? "Order cancelled" : `Order moved to ${nextStatus}`;
-        return Boolean(await patchJson(`/api/orders/${orderId}/status`, "PATCH", { status: nextStatus }, label));
+        return Boolean(
+          await patchJson(
+            `/api/orders/${orderId}/status`,
+            "PATCH",
+            { status: nextStatus },
+            label,
+            { retryOnNetworkError: true },
+          ),
+        );
       },
       saveOrderNote: async (orderId, note) =>
-        Boolean(await patchJson(`/api/orders/${orderId}/note`, "PATCH", { operatorNote: note || null }, "Note saved")),
+        Boolean(
+          await patchJson(
+            `/api/orders/${orderId}/note`,
+            "PATCH",
+            { operatorNote: note || null },
+            "Note saved",
+            { retryOnNetworkError: true },
+          ),
+        ),
       saveInventory: async (id, input) =>
-        Boolean(await patchJson(`/api/inventory/${id}`, "PATCH", input, "Stock updated")),
+        Boolean(
+          await patchJson(`/api/inventory/${id}`, "PATCH", input, "Stock updated", {
+            retryOnNetworkError: true,
+          }),
+        ),
       saveMenuItem: async (id, payload) =>
-        Boolean(await patchJson(`/api/menu/${id}`, "PATCH", payload, "Menu item saved — live on your site")),
+        Boolean(
+          await patchJson(
+            `/api/menu/${id}`,
+            "PATCH",
+            payload,
+            "Menu item saved — live on your site",
+            { retryOnNetworkError: true },
+          ),
+        ),
       createMenuItem: async (payload) => {
         const result = await patchJson("/api/menu", "POST", payload, "New dish added to the live menu");
         return result?.id ?? null;
@@ -167,8 +231,6 @@ function DashboardInner({
     }),
     [patchJson],
   );
-
-  /* -------- Derived -------- */
 
   const activeOrders = useMemo(() => snapshot.orders.filter(isActiveOrder), [snapshot.orders]);
   const lowStock = useMemo(
@@ -182,8 +244,6 @@ function DashboardInner({
 
   const syncedLabel = dataSource === "mock" ? "Demo data" : `Live · ${timeAgo(snapshot.generatedAt, now)}`;
   const activeNav = NAV.find((item) => item.key === view) ?? NAV[0];
-
-  /* -------- Render -------- */
 
   if (dataIssue && !initialSnapshot) {
     return (
@@ -236,12 +296,16 @@ function DashboardInner({
             <span className={`live-dot ${dataSource === "mock" ? "muted" : ""}`} />
             {syncedLabel}
           </div>
-          <a href="https://mogrillzva.vercel.app" rel="noreferrer" target="_blank">
-            View public site ↗
-          </a>
-          <a href="https://mogrillzva.vercel.app/social-agent.html" rel="noreferrer" target="_blank">
-            Social agent ↗
-          </a>
+          {PUBLIC_SITE_URL ? (
+            <a href={PUBLIC_SITE_URL} rel="noreferrer" target="_blank">
+              View public site ↗
+            </a>
+          ) : null}
+          {SOCIAL_AGENT_URL ? (
+            <a href={SOCIAL_AGENT_URL} rel="noreferrer" target="_blank">
+              Social agent ↗
+            </a>
+          ) : null}
         </div>
       </aside>
 
