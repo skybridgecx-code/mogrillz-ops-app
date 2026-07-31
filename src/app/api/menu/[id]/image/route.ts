@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
-import { requireAdminRouteContext } from "@/lib/supabase/admin-context";
+import {
+  requireAdminRouteContext,
+  type AdminRouteContext,
+} from "@/lib/supabase/admin-context";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -12,7 +15,8 @@ const MAX_OUTPUT_DIMENSION = 1600;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"] as const;
 const DEFAULT_BUCKET = "menu-images";
 
-type AdminClient = NonNullable<ReturnType<typeof createSupabaseAdminClient>>;
+type StorageAdminClient = NonNullable<ReturnType<typeof createSupabaseAdminClient>>;
+type DatabaseClient = AdminRouteContext["supabase"];
 type MenuImageMetadata = {
   id: string;
   imagePath: string | null;
@@ -20,10 +24,10 @@ type MenuImageMetadata = {
 };
 
 async function loadMenuImageMetadata(
-  adminClient: AdminClient,
+  databaseClient: DatabaseClient,
   id: string,
 ): Promise<MenuImageMetadata | null> {
-  const result = await adminClient
+  const result = await databaseClient
     .from("menu_items")
     .select("id,image_path,image_bucket")
     .eq("id", id)
@@ -47,8 +51,8 @@ async function loadMenuImageMetadata(
   };
 }
 
-async function verifyProvisionedBucket(adminClient: AdminClient, bucket: string) {
-  const result = await adminClient.storage.getBucket(bucket);
+async function verifyProvisionedBucket(storageClient: StorageAdminClient, bucket: string) {
+  const result = await storageClient.storage.getBucket(bucket);
   if (result.error || !result.data?.public) {
     console.error("[menu-image-upload] storage bucket is not provisioned", {
       bucket,
@@ -108,8 +112,9 @@ export async function POST(
   const authResult = await requireAdminRouteContext({ requireServiceRole: true });
   if (!authResult.ok) return authResult.response;
 
-  const adminClient = authResult.context.adminClient;
-  if (!adminClient) {
+  const storageClient = authResult.context.adminClient;
+  const databaseClient = authResult.context.supabase;
+  if (!storageClient) {
     return NextResponse.json(
       { error: "Privileged image operations are not configured.", requestId },
       { status: 500 },
@@ -121,7 +126,7 @@ export async function POST(
     return NextResponse.json({ error: "Item ID required.", requestId }, { status: 400 });
   }
 
-  const menuItem = await loadMenuImageMetadata(adminClient, id);
+  const menuItem = await loadMenuImageMetadata(databaseClient, id);
   if (!menuItem) {
     return NextResponse.json({ error: "Menu item not found.", requestId }, { status: 404 });
   }
@@ -156,7 +161,7 @@ export async function POST(
   }
 
   const bucket = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || DEFAULT_BUCKET;
-  if (!(await verifyProvisionedBucket(adminClient, bucket))) {
+  if (!(await verifyProvisionedBucket(storageClient, bucket))) {
     return NextResponse.json(
       {
         error: "Image storage is not provisioned. Run the storage provisioning preflight.",
@@ -167,7 +172,7 @@ export async function POST(
   }
 
   const path = `items/${id}/${Date.now()}-${crypto.randomUUID()}.webp`;
-  const { error: uploadError } = await adminClient.storage
+  const { error: uploadError } = await storageClient.storage
     .from(bucket)
     .upload(path, normalizedImage, { contentType: "image/webp", upsert: false });
 
@@ -181,9 +186,9 @@ export async function POST(
     return NextResponse.json({ error: "Image upload failed.", requestId }, { status: 500 });
   }
 
-  const { data: urlData } = adminClient.storage.from(bucket).getPublicUrl(path);
+  const { data: urlData } = storageClient.storage.from(bucket).getPublicUrl(path);
   const imageUrl = urlData.publicUrl;
-  const updateResult = await adminClient
+  const updateResult = await databaseClient
     .from("menu_items")
     .update({
       image_url: imageUrl,
@@ -204,7 +209,7 @@ export async function POST(
       message: updateResult.error?.message,
     });
 
-    const rollback = await adminClient.storage.from(bucket).remove([path]);
+    const rollback = await storageClient.storage.from(bucket).remove([path]);
     if (rollback.error) {
       console.error("[menu-image-upload] rollback cleanup failed", {
         itemId: id,
@@ -221,7 +226,7 @@ export async function POST(
   }
 
   if (menuItem.imagePath && menuItem.imagePath !== path) {
-    const cleanup = await adminClient.storage
+    const cleanup = await storageClient.storage
       .from(menuItem.imageBucket || bucket)
       .remove([menuItem.imagePath]);
 
