@@ -85,27 +85,6 @@ begin
     return jsonb_build_object('success', false, 'error', 'forbidden');
   end if;
 
-  -- Serialize retries that carry the same idempotency key. Without this lock,
-  -- two concurrent first attempts could both miss the event lookup.
-  perform pg_advisory_xact_lock(hashtextextended(p_request_id::text, 0));
-
-  select *
-  into v_existing_event
-  from public.order_status_events
-  where request_id = p_request_id
-  limit 1;
-
-  if found then
-    return jsonb_build_object(
-      'success', true,
-      'id', v_existing_event.order_id,
-      'status', v_existing_event.to_status,
-      'version', v_existing_event.order_version,
-      'request_id', v_existing_event.request_id,
-      'replayed', true
-    );
-  end if;
-
   v_next_normalized := lower(trim(coalesce(p_next_status, '')));
   v_next_normalized := replace(replace(v_next_normalized, '_', ' '), '-', ' ');
   v_next_normalized := regexp_replace(v_next_normalized, '\s+', ' ', 'g');
@@ -118,6 +97,38 @@ begin
 
   if v_next_normalized not in ('new', 'in prep', 'ready', 'picked up', 'cancelled') then
     return jsonb_build_object('success', false, 'error', 'invalid_status');
+  end if;
+
+  -- Serialize retries that carry the same idempotency key. Without this lock,
+  -- two concurrent first attempts could both miss the event lookup.
+  perform pg_advisory_xact_lock(hashtextextended(p_request_id::text, 0));
+
+  select *
+  into v_existing_event
+  from public.order_status_events
+  where request_id = p_request_id
+  limit 1;
+
+  if found then
+    if v_existing_event.order_id <> p_order_id
+       or v_existing_event.to_status <> v_next_normalized then
+      return jsonb_build_object(
+        'success', false,
+        'error', 'idempotency_conflict',
+        'existing_order_id', v_existing_event.order_id,
+        'existing_status', v_existing_event.to_status,
+        'request_id', p_request_id
+      );
+    end if;
+
+    return jsonb_build_object(
+      'success', true,
+      'id', v_existing_event.order_id,
+      'status', v_existing_event.to_status,
+      'version', v_existing_event.order_version,
+      'request_id', v_existing_event.request_id,
+      'replayed', true
+    );
   end if;
 
   select status, version
