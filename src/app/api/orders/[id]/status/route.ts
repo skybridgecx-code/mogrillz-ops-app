@@ -79,6 +79,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Missing order id.", requestId }, { status: 400 });
   }
 
+  if (!UUID_PATTERN.test(orderId)) {
+    return NextResponse.json({ error: "Invalid order id.", requestId }, { status: 400 });
+  }
+
   const authResult = await requireAdminRouteContext();
   if (!authResult.ok) return authResult.response;
 
