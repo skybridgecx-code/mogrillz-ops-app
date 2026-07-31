@@ -2,13 +2,14 @@
 
 import { useMemo } from "react";
 
-import { formatCurrency } from "@/lib/dashboard/format";
 import {
   formatDurationLabel,
   getAverageFulfillmentMinutes,
   getBestSellers,
   getRepeatCustomerRate,
 } from "@/lib/dashboard/analytics";
+import { formatCurrency } from "@/lib/dashboard/format";
+import { getRecognizedRevenueOrders } from "@/lib/dashboard/metrics";
 import type { Customer, Order } from "@/types/domain";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -52,26 +53,26 @@ export function AnalyticsView({ orders, customers }: { orders: Order[]; customer
   const speed = useMemo(() => getAverageFulfillmentMinutes(orders), [orders]);
 
   const revenue = useMemo(() => {
-    const validOrders = orders.filter((order) => order.status !== "Cancelled");
-    const total = validOrders.reduce((sum, order) => sum + order.totalCents, 0);
-    const average = validOrders.length ? Math.round(total / validOrders.length) : 0;
+    const recognizedOrders = getRecognizedRevenueOrders(orders);
+    const total = recognizedOrders.reduce((sum, order) => sum + Math.max(0, order.totalCents), 0);
+    const average = recognizedOrders.length ? Math.round(total / recognizedOrders.length) : 0;
 
     const today = new Date();
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     const days: number[] = new Array(14).fill(0);
     let last7 = 0;
 
-    for (const order of validOrders) {
+    for (const order of recognizedOrders) {
       const created = new Date(order.createdAt).getTime();
       if (!Number.isFinite(created)) continue;
       const dayIndex = Math.floor((start - created) / DAY_MS);
       if (dayIndex >= 0 && dayIndex < 14) {
-        days[13 - dayIndex] += order.totalCents;
-        if (dayIndex < 7) last7 += order.totalCents;
+        days[13 - dayIndex] += Math.max(0, order.totalCents);
+        if (dayIndex < 7) last7 += Math.max(0, order.totalCents);
       }
     }
 
-    return { total, average, days, last7, count: validOrders.length };
+    return { total, average, days, last7, count: recognizedOrders.length };
   }, [orders]);
 
   const maxSeller = Math.max(...bestSellers.map((row) => row.quantity), 1);
@@ -80,26 +81,26 @@ export function AnalyticsView({ orders, customers }: { orders: Order[]; customer
     <div className="stack">
       <div className="stat-grid">
         <div className="kpi gold">
-          <div className="kpi-label">Revenue · last 7 days</div>
+          <div className="kpi-label">Paid revenue · last 7 days</div>
           <div className="kpi-value">{formatCurrency(revenue.last7)}</div>
-          <div className="kpi-delta">{revenue.count} orders all-time</div>
+          <div className="kpi-delta">{revenue.count} paid orders all-time</div>
         </div>
         <div className="kpi green">
-          <div className="kpi-label">Average order</div>
+          <div className="kpi-label">Average paid order</div>
           <div className="kpi-value">{formatCurrency(revenue.average)}</div>
-          <div className="kpi-delta">across non-cancelled orders</div>
+          <div className="kpi-delta">excludes unpaid and cancelled orders</div>
         </div>
         <div className="kpi blue">
           <div className="kpi-label">Repeat customers</div>
           <div className="kpi-value">{repeat.ratePercent}%</div>
-          <div className="kpi-delta">{repeat.repeatCount} of {repeat.totalCount} ordered again</div>
+          <div className="kpi-delta">{repeat.repeatCount} of {repeat.totalCount} purchasers ordered again</div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Order turnaround</div>
           <div className="kpi-value" style={{ fontSize: "1.1rem", lineHeight: "1.9rem" }}>
             {formatDurationLabel(speed.averageMinutes)}
           </div>
-          <div className="kpi-delta">{speed.sampleSize} completed orders measured</div>
+          <div className="kpi-delta">{speed.sampleSize} lifecycle-timestamped pickups measured</div>
         </div>
       </div>
 
@@ -108,14 +109,14 @@ export function AnalyticsView({ orders, customers }: { orders: Order[]; customer
           <div className="card-head">
             <div>
               <p className="kicker">Momentum</p>
-              <h3 className="card-title">Revenue · last 14 days</h3>
+              <h3 className="card-title">Paid revenue · last 14 days</h3>
             </div>
             <span className="pill warning">{formatCurrency(revenue.days.reduce((sum, value) => sum + value, 0))}</span>
           </div>
           {revenue.days.some((value) => value > 0) ? (
             <Sparkline values={revenue.days} />
           ) : (
-            <p className="muted" style={{ margin: 0 }}>No orders in the last two weeks yet — this chart fills in as sales come through.</p>
+            <p className="muted" style={{ margin: 0 }}>No paid orders in the last two weeks yet.</p>
           )}
         </section>
 
@@ -123,7 +124,7 @@ export function AnalyticsView({ orders, customers }: { orders: Order[]; customer
           <div className="card-head">
             <div>
               <p className="kicker">Best sellers</p>
-              <h3 className="card-title">What&rsquo;s actually selling</h3>
+              <h3 className="card-title">What paid customers bought</h3>
             </div>
           </div>
           {bestSellers.length ? (
@@ -137,7 +138,7 @@ export function AnalyticsView({ orders, customers }: { orders: Order[]; customer
               </div>
             ))
           ) : (
-            <p className="muted" style={{ margin: 0 }}>Rankings appear after your first orders.</p>
+            <p className="muted" style={{ margin: 0 }}>Rankings appear after the first paid orders.</p>
           )}
         </section>
       </div>
