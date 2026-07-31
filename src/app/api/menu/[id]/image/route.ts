@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
 
+import { normalizeMenuImage } from "@/lib/images/normalize-menu-image";
 import {
   requireAdminRouteContext,
   type AdminRouteContext,
@@ -9,9 +9,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-const MAX_INPUT_PIXELS = 40_000_000;
-const MAX_OUTPUT_DIMENSION = 1600;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"] as const;
 const DEFAULT_BUCKET = "menu-images";
 
@@ -64,46 +62,6 @@ async function verifyProvisionedBucket(storageClient: StorageAdminClient, bucket
   return true;
 }
 
-async function normalizeImage(file: File) {
-  const input = Buffer.from(await file.arrayBuffer());
-
-  try {
-    const metadata = await sharp(input, {
-      failOn: "warning",
-      limitInputPixels: MAX_INPUT_PIXELS,
-    }).metadata();
-
-    if (!metadata.width || !metadata.height) {
-      throw new Error("Image dimensions are unavailable.");
-    }
-
-    const output = await sharp(input, {
-      failOn: "warning",
-      limitInputPixels: MAX_INPUT_PIXELS,
-    })
-      .rotate()
-      .resize({
-        width: MAX_OUTPUT_DIMENSION,
-        height: MAX_OUTPUT_DIMENSION,
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .webp({ quality: 84, effort: 4 })
-      .toBuffer();
-
-    if (!output.length || output.length > MAX_IMAGE_SIZE) {
-      throw new Error("Normalized image exceeds the storage limit.");
-    }
-
-    return output;
-  } catch (error) {
-    console.warn("[menu-image-upload] image decode failed", {
-      message: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
-
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -141,7 +99,7 @@ export async function POST(
     return NextResponse.json({ error: "No image file provided.", requestId }, { status: 400 });
   }
 
-  if (file.size > MAX_IMAGE_SIZE) {
+  if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json({ error: "Image must be under 5 MB.", requestId }, { status: 400 });
   }
 
@@ -152,8 +110,14 @@ export async function POST(
     );
   }
 
-  const normalizedImage = await normalizeImage(file);
-  if (!normalizedImage) {
+  let normalizedImage: Buffer;
+  try {
+    normalizedImage = await normalizeMenuImage(Buffer.from(await file.arrayBuffer()));
+  } catch (error) {
+    console.warn("[menu-image-upload] image normalization failed", {
+      requestId,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json(
       { error: "The uploaded file is not a valid supported image.", requestId },
       { status: 400 },
