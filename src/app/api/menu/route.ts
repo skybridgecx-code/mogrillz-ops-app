@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { userHasAdminMembership } from "@/lib/supabase/access";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireAdminRouteContext } from "@/lib/supabase/admin-context";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
 const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
@@ -38,7 +36,9 @@ function readText(value: unknown, maxLength: number, field: string) {
   if (typeof value !== "string") throw new Error(`${field} is required.`);
   const normalized = value.trim();
   if (!normalized) throw new Error(`${field} is required.`);
-  if (normalized.length > maxLength) throw new Error(`${field} must be ${maxLength} characters or fewer.`);
+  if (normalized.length > maxLength) {
+    throw new Error(`${field} must be ${maxLength} characters or fewer.`);
+  }
   return normalized;
 }
 
@@ -47,7 +47,9 @@ function readOptionalText(value: unknown, maxLength: number) {
   if (typeof value !== "string") throw new Error("Optional text fields must be strings.");
   const normalized = value.trim();
   if (!normalized) return null;
-  if (normalized.length > maxLength) throw new Error(`Optional text fields must be ${maxLength} characters or fewer.`);
+  if (normalized.length > maxLength) {
+    throw new Error(`Optional text fields must be ${maxLength} characters or fewer.`);
+  }
   return normalized;
 }
 
@@ -118,35 +120,9 @@ function readOptionalInteger(value: unknown, min: number, max: number, field: st
   return Math.round(parsed);
 }
 
-async function requireAdmin() {
-  const supabase = createSupabaseServerClient();
-  if (!supabase) {
-    return { error: NextResponse.json({ error: "Supabase is not configured." }, { status: 500 }) };
-  }
-
-  const claimsResult = await supabase.auth.getClaims();
-  const userId = typeof claimsResult.data?.claims?.sub === "string" ? claimsResult.data.claims.sub : null;
-
-  if (!userId) {
-    return { error: NextResponse.json({ error: "Unauthorized." }, { status: 401 }) };
-  }
-
-  const isAdmin = await userHasAdminMembership(supabase, userId);
-  if (!isAdmin) {
-    return { error: NextResponse.json({ error: "Forbidden." }, { status: 403 }) };
-  }
-
-  const adminClient = createSupabaseAdminClient();
-  if (!adminClient) {
-    return { error: NextResponse.json({ error: "Supabase admin client is not configured." }, { status: 500 }) };
-  }
-
-  return { adminClient };
-}
-
 export async function POST(request: Request) {
-  const authResult = await requireAdmin();
-  if ("error" in authResult) return authResult.error;
+  const authResult = await requireAdminRouteContext();
+  if (!authResult.ok) return authResult.response;
 
   let payload: Record<string, unknown>;
 
@@ -156,11 +132,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  let slug: string;
-
   try {
     const name = readText(payload.name, 120, "Name");
-    slug = slugify(typeof payload.slug === "string" ? payload.slug : name);
+    const slug = slugify(typeof payload.slug === "string" ? payload.slug : name);
 
     if (!slug) {
       throw new Error("Slug is required.");
@@ -182,8 +156,6 @@ export async function POST(request: Request) {
       notes: readOptionalText(payload.notes, 400),
     };
 
-    // Macros are optional and only written when provided, so item creation
-    // keeps working before the meal-prep migration has been applied.
     const calories = readOptionalInteger(payload.calories, 0, 5000, "Calories");
     const proteinG = readOptionalInteger(payload.proteinG, 0, 500, "Protein");
     const carbsG = readOptionalInteger(payload.carbsG, 0, 500, "Carbs");
@@ -196,14 +168,14 @@ export async function POST(request: Request) {
       insertPayload.fat_g = fatG;
     }
 
-    let createResult = await authResult.adminClient
+    let createResult = await authResult.context.supabase
       .from("menu_items")
       .insert(insertPayload)
       .select("*")
       .single();
 
     if (createResult.error && isMissingOptionalMenuColumn(createResult.error)) {
-      createResult = await authResult.adminClient
+      createResult = await authResult.context.supabase
         .from("menu_items")
         .insert(stripOptionalMenuColumns(insertPayload))
         .select("*")
@@ -211,9 +183,17 @@ export async function POST(request: Request) {
     }
 
     if (createResult.error || !createResult.data) {
-      const message =
-        createResult.error?.code === "23505" ? "Slug is already in use." : "Failed to create menu item.";
-      return NextResponse.json({ error: message }, { status: createResult.error?.code === "23505" ? 409 : 500 });
+      const isDuplicate = createResult.error?.code === "23505";
+      if (!isDuplicate) {
+        console.error("[api/menu] create failed", {
+          code: createResult.error?.code,
+          message: createResult.error?.message,
+        });
+      }
+      return NextResponse.json(
+        { error: isDuplicate ? "Slug is already in use." : "Failed to create menu item." },
+        { status: isDuplicate ? 409 : 500 },
+      );
     }
 
     return NextResponse.json(createResult.data, { status: 201 });
