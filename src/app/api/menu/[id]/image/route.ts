@@ -12,18 +12,7 @@ type MenuImageMetadata = {
   id: string;
   imagePath: string | null;
   imageBucket: string | null;
-  supportsImageMetadata: boolean;
 };
-
-function isMissingImageMetadataColumn(error: { message?: string; code?: string } | null | undefined) {
-  const message = error?.message?.toLowerCase() ?? "";
-  return (
-    error?.code === "42703" ||
-    error?.code === "PGRST204" ||
-    message.includes("image_path") ||
-    message.includes("image_bucket")
-  );
-}
 
 function fileExtensionForType(type: string) {
   if (type === "image/jpeg") return "jpg";
@@ -62,53 +51,27 @@ async function loadMenuImageMetadata(
   adminClient: AdminClient,
   id: string,
 ): Promise<MenuImageMetadata | null> {
-  const metadataResult = await adminClient
+  const result = await adminClient
     .from("menu_items")
     .select("id,image_path,image_bucket")
     .eq("id", id)
     .maybeSingle();
 
-  if (!metadataResult.error) {
-    if (!metadataResult.data) return null;
-
-    return {
-      id: String(metadataResult.data.id),
-      imagePath:
-        typeof metadataResult.data.image_path === "string" ? metadataResult.data.image_path : null,
-      imageBucket:
-        typeof metadataResult.data.image_bucket === "string"
-          ? metadataResult.data.image_bucket
-          : null,
-      supportsImageMetadata: true,
-    };
-  }
-
-  if (!isMissingImageMetadataColumn(metadataResult.error)) {
+  if (result.error) {
     console.error("[menu-image-upload] menu lookup failed", {
       itemId: id,
-      code: metadataResult.error.code,
-      message: metadataResult.error.message,
+      code: result.error.code,
+      message: result.error.message,
     });
     return null;
   }
 
-  const basicResult = await adminClient.from("menu_items").select("id").eq("id", id).maybeSingle();
-  if (basicResult.error || !basicResult.data) {
-    if (basicResult.error) {
-      console.error("[menu-image-upload] menu fallback lookup failed", {
-        itemId: id,
-        code: basicResult.error.code,
-        message: basicResult.error.message,
-      });
-    }
-    return null;
-  }
+  if (!result.data) return null;
 
   return {
-    id: String(basicResult.data.id),
-    imagePath: null,
-    imageBucket: null,
-    supportsImageMetadata: false,
+    id: String(result.data.id),
+    imagePath: typeof result.data.image_path === "string" ? result.data.image_path : null,
+    imageBucket: typeof result.data.image_bucket === "string" ? result.data.image_bucket : null,
   };
 }
 
@@ -196,55 +159,27 @@ export async function POST(
 
   const { data: urlData } = adminClient.storage.from(bucket).getPublicUrl(path);
   const imageUrl = urlData.publicUrl;
-  const updatedAt = new Date().toISOString();
-  const updatePayload: Record<string, string> = {
-    image_url: imageUrl,
-    updated_at: updatedAt,
-  };
-
-  if (menuItem.supportsImageMetadata) {
-    updatePayload.image_path = path;
-    updatePayload.image_bucket = bucket;
-  }
-
   const updateResult = await adminClient
     .from("menu_items")
-    .update(updatePayload)
+    .update({
+      image_url: imageUrl,
+      image_path: path,
+      image_bucket: bucket,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
     .select("id")
     .maybeSingle();
 
-  let databaseUpdated = !updateResult.error && Boolean(updateResult.data);
-
-  if (updateResult.error && isMissingImageMetadataColumn(updateResult.error)) {
-    const fallbackResult = await adminClient
-      .from("menu_items")
-      .update({ image_url: imageUrl, updated_at: updatedAt })
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
-
-    databaseUpdated = !fallbackResult.error && Boolean(fallbackResult.data);
-    if (fallbackResult.error) {
-      console.error("[menu-image-upload] fallback database update failed", {
-        itemId: id,
-        path,
-        requestId,
-        code: fallbackResult.error.code,
-        message: fallbackResult.error.message,
-      });
-    }
-  } else if (updateResult.error) {
+  if (updateResult.error || !updateResult.data) {
     console.error("[menu-image-upload] database update failed", {
       itemId: id,
       path,
       requestId,
-      code: updateResult.error.code,
-      message: updateResult.error.message,
+      code: updateResult.error?.code,
+      message: updateResult.error?.message,
     });
-  }
 
-  if (!databaseUpdated) {
     const rollback = await adminClient.storage.from(bucket).remove([path]);
     if (rollback.error) {
       console.error("[menu-image-upload] rollback cleanup failed", {
