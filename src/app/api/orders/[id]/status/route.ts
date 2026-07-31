@@ -95,7 +95,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Invalid order id.", requestId }, { status: 400 });
   }
 
-  const authResult = await requireAdminRouteContext();
+  const authResult = await requireAdminRouteContext({
+    request,
+    contentType: "json",
+  });
   if (!authResult.ok) return authResult.response;
 
   let requestedStatus: OrderStatus | null;
