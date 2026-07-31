@@ -20,7 +20,11 @@ function readNextRoute() {
   if (typeof window === "undefined") return "/";
 
   const nextRoute = new URLSearchParams(window.location.search).get("next");
-  return nextRoute && nextRoute.startsWith("/") ? nextRoute : "/";
+  if (!nextRoute || !nextRoute.startsWith("/") || nextRoute.startsWith("//")) {
+    return "/";
+  }
+
+  return nextRoute;
 }
 
 export function LoginForm({ authReady }: LoginFormProps) {
@@ -68,7 +72,7 @@ export function LoginForm({ authReady }: LoginFormProps) {
       });
 
       if (error) {
-        throw new Error(error.message);
+        throw new Error("Email or password is incorrect.");
       }
 
       setSuccessMessage("Signed in. Redirecting to Shama’s Kitchen Ops...");
