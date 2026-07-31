@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-type AdminMembershipConfig = {
+export type AdminMembershipConfig = {
   table: string;
   userIdColumn: string;
   roleColumn: string;
@@ -31,7 +31,7 @@ function readString(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-function matchesAdminMembership(
+export function matchesAdminMembership(
   row: Record<string, unknown>,
   config: AdminMembershipConfig,
   userId: string,
