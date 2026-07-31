@@ -25,7 +25,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Missing order id." }, { status: 400 });
   }
 
-  const authResult = await requireAdminRouteContext();
+  const authResult = await requireAdminRouteContext({
+    request,
+    contentType: "json",
+  });
   if (!authResult.ok) return authResult.response;
 
   let operatorNote: string | null | undefined;
