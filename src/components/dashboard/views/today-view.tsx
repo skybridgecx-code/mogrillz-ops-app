@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 import type { OpsApi, ViewKey } from "@/components/dashboard/dashboard-app";
 import { formatCurrency, isActiveOrder, summarizeItems, timeAgo } from "@/lib/dashboard/format";
-import { getNextOrderStatus } from "@/lib/dashboard/order-status";
+import { getNextOrderStatus, isRiskyOrderStatusTransition } from "@/lib/dashboard/order-status";
 import type { DashboardSnapshot, InventoryItem } from "@/types/domain";
 
 interface AttentionItem {
@@ -65,7 +65,7 @@ export function TodayView({
         tone: "warning",
         icon: "🛎️",
         title: `${readyOrders.length} order${readyOrders.length > 1 ? "s" : ""} ready for pickup`,
-        copy: "Waiting on the customer — mark picked up when they collect.",
+        copy: "Waiting on the customer — review the order before marking it picked up.",
         target: "orders",
       });
     }
@@ -114,6 +114,8 @@ export function TodayView({
 
   const nextUp = newOrders[0] ?? inPrepOrders[0] ?? readyOrders[0] ?? null;
   const nextStatus = nextUp ? getNextOrderStatus(nextUp.status) : null;
+  const nextRequiresReview =
+    nextUp && nextStatus ? isRiskyOrderStatusTransition(nextUp.status, nextStatus) : false;
 
   return (
     <>
@@ -186,10 +188,16 @@ export function TodayView({
               {nextStatus ? (
                 <button
                   className="btn btn-primary btn-block"
-                  onClick={() => api.advanceOrder(nextUp.id, nextStatus)}
+                  onClick={() => {
+                    if (nextRequiresReview) {
+                      goTo("orders");
+                      return;
+                    }
+                    api.advanceOrder(nextUp.id, nextStatus);
+                  }}
                   type="button"
                 >
-                  Mark {nextStatus === "Picked Up" ? "Picked Up" : nextStatus}
+                  {nextRequiresReview ? "Review pickup on order board" : `Mark ${nextStatus}`}
                 </button>
               ) : null}
               <button className="btn btn-ghost btn-block" onClick={() => goTo("orders")} style={{ marginTop: "0.5rem" }} type="button">
