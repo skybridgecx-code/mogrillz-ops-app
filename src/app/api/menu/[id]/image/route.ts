@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { userHasAdminMembership } from "@/lib/supabase/access";
+
+import { requireAdminRouteContext } from "@/lib/supabase/admin-context";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"] as const;
@@ -58,7 +58,10 @@ async function ensureMenuImageBucket(adminClient: AdminClient, bucket: string) {
   return create.error ?? null;
 }
 
-async function loadMenuImageMetadata(adminClient: AdminClient, id: string): Promise<MenuImageMetadata | null> {
+async function loadMenuImageMetadata(
+  adminClient: AdminClient,
+  id: string,
+): Promise<MenuImageMetadata | null> {
   const metadataResult = await adminClient
     .from("menu_items")
     .select("id,image_path,image_bucket")
@@ -70,21 +73,33 @@ async function loadMenuImageMetadata(adminClient: AdminClient, id: string): Prom
 
     return {
       id: String(metadataResult.data.id),
-      imagePath: typeof metadataResult.data.image_path === "string" ? metadataResult.data.image_path : null,
-      imageBucket: typeof metadataResult.data.image_bucket === "string" ? metadataResult.data.image_bucket : null,
+      imagePath:
+        typeof metadataResult.data.image_path === "string" ? metadataResult.data.image_path : null,
+      imageBucket:
+        typeof metadataResult.data.image_bucket === "string"
+          ? metadataResult.data.image_bucket
+          : null,
       supportsImageMetadata: true,
     };
   }
 
   if (!isMissingImageMetadataColumn(metadataResult.error)) {
-    console.error("[menu-image-upload] menu lookup failed", { itemId: id, error: metadataResult.error.message });
+    console.error("[menu-image-upload] menu lookup failed", {
+      itemId: id,
+      code: metadataResult.error.code,
+      message: metadataResult.error.message,
+    });
     return null;
   }
 
   const basicResult = await adminClient.from("menu_items").select("id").eq("id", id).maybeSingle();
   if (basicResult.error || !basicResult.data) {
     if (basicResult.error) {
-      console.error("[menu-image-upload] menu fallback lookup failed", { itemId: id, error: basicResult.error.message });
+      console.error("[menu-image-upload] menu fallback lookup failed", {
+        itemId: id,
+        code: basicResult.error.code,
+        message: basicResult.error.message,
+      });
     }
     return null;
   }
@@ -97,78 +112,94 @@ async function loadMenuImageMetadata(adminClient: AdminClient, id: string): Prom
   };
 }
 
-async function requireAdmin() {
-  const supabase = createSupabaseServerClient();
-  if (!supabase) return { error: NextResponse.json({ error: "Supabase not configured." }, { status: 500 }) };
-
-  const claimsResult = await supabase.auth.getClaims();
-  const userId = typeof claimsResult.data?.claims?.sub === "string" ? claimsResult.data.claims.sub : null;
-  if (!userId) return { error: NextResponse.json({ error: "Unauthorized." }, { status: 401 }) };
-
-  const isAdmin = await userHasAdminMembership(supabase, userId);
-  if (!isAdmin) return { error: NextResponse.json({ error: "Forbidden." }, { status: 403 }) };
-
-  const adminClient = createSupabaseAdminClient();
-  if (!adminClient) return { error: NextResponse.json({ error: "Admin client not configured." }, { status: 500 }) };
-
-  return { adminClient };
-}
-
 export async function POST(
   request: Request,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> },
 ) {
-  const authResult = await requireAdmin();
-  if ("error" in authResult) return authResult.error;
+  const requestId = crypto.randomUUID();
+  const authResult = await requireAdminRouteContext({ requireServiceRole: true });
+  if (!authResult.ok) return authResult.response;
+
+  const adminClient = authResult.context.adminClient;
+  if (!adminClient) {
+    return NextResponse.json(
+      { error: "Privileged image operations are not configured.", requestId },
+      { status: 500 },
+    );
+  }
 
   const { id } = await context.params;
-  if (!id) return NextResponse.json({ error: "Item ID required." }, { status: 400 });
+  if (!id) {
+    return NextResponse.json({ error: "Item ID required.", requestId }, { status: 400 });
+  }
 
-  const menuItem = await loadMenuImageMetadata(authResult.adminClient, id);
-  if (!menuItem) return NextResponse.json({ error: "Menu item not found." }, { status: 404 });
+  const menuItem = await loadMenuImageMetadata(adminClient, id);
+  if (!menuItem) {
+    return NextResponse.json({ error: "Menu item not found.", requestId }, { status: 404 });
+  }
 
   const formData = await request.formData().catch(() => null);
-  if (!formData) return NextResponse.json({ error: "Invalid form data." }, { status: 400 });
+  if (!formData) {
+    return NextResponse.json({ error: "Invalid form data.", requestId }, { status: 400 });
+  }
 
   const file = formData.get("image") as File | null;
-  if (!file || !file.size) return NextResponse.json({ error: "No image file provided." }, { status: 400 });
+  if (!file || !file.size) {
+    return NextResponse.json({ error: "No image file provided.", requestId }, { status: 400 });
+  }
 
-  if (file.size > MAX_IMAGE_SIZE) return NextResponse.json({ error: "Image must be under 5 MB." }, { status: 400 });
+  if (file.size > MAX_IMAGE_SIZE) {
+    return NextResponse.json({ error: "Image must be under 5 MB.", requestId }, { status: 400 });
+  }
 
   if (!ALLOWED_IMAGE_TYPES.includes(file.type as (typeof ALLOWED_IMAGE_TYPES)[number])) {
-    return NextResponse.json({ error: "Only JPEG, PNG, WebP, or AVIF images are accepted." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Only JPEG, PNG, WebP, or AVIF images are accepted.", requestId },
+      { status: 400 },
+    );
   }
 
   const ext = fileExtensionForType(file.type);
-  if (!ext) return NextResponse.json({ error: "Unsupported image type." }, { status: 400 });
+  if (!ext) {
+    return NextResponse.json({ error: "Unsupported image type.", requestId }, { status: 400 });
+  }
 
   const bucket = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || DEFAULT_BUCKET;
-  const bucketError = await ensureMenuImageBucket(authResult.adminClient, bucket);
+  const bucketError = await ensureMenuImageBucket(adminClient, bucket);
   if (bucketError) {
-    console.error("[menu-image-upload] storage bucket setup failed", { bucket, error: bucketError.message });
-    return NextResponse.json({ error: `Storage bucket setup failed: ${bucketError.message}` }, { status: 500 });
+    console.error("[menu-image-upload] storage bucket setup failed", {
+      bucket,
+      requestId,
+      message: bucketError.message,
+    });
+    return NextResponse.json(
+      { error: "Storage is not ready for image uploads.", requestId },
+      { status: 500 },
+    );
   }
 
   const path = `items/${id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-
   const bytes = await file.arrayBuffer();
-  const { error: uploadError } = await authResult.adminClient.storage
+  const { error: uploadError } = await adminClient.storage
     .from(bucket)
-    .upload(path, bytes, { contentType: file.type, upsert: true });
+    .upload(path, bytes, { contentType: file.type, upsert: false });
 
   if (uploadError) {
-    console.error("[menu-image-upload] storage upload failed", { itemId: id, path, error: uploadError.message });
-    return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 });
+    console.error("[menu-image-upload] storage upload failed", {
+      itemId: id,
+      path,
+      requestId,
+      message: uploadError.message,
+    });
+    return NextResponse.json({ error: "Image upload failed.", requestId }, { status: 500 });
   }
 
-  console.log("[menu-image-upload] uploaded", { itemId: id, path, bucket, sizeBytes: file.size });
-
-  const { data: urlData } = authResult.adminClient.storage.from(bucket).getPublicUrl(path);
+  const { data: urlData } = adminClient.storage.from(bucket).getPublicUrl(path);
   const imageUrl = urlData.publicUrl;
-
+  const updatedAt = new Date().toISOString();
   const updatePayload: Record<string, string> = {
     image_url: imageUrl,
-    updated_at: new Date().toISOString(),
+    updated_at: updatedAt,
   };
 
   if (menuItem.supportsImageMetadata) {
@@ -176,48 +207,74 @@ export async function POST(
     updatePayload.image_bucket = bucket;
   }
 
-  const updateResult = await authResult.adminClient
+  const updateResult = await adminClient
     .from("menu_items")
     .update(updatePayload)
     .eq("id", id)
     .select("id")
     .maybeSingle();
 
+  let databaseUpdated = !updateResult.error && Boolean(updateResult.data);
+
   if (updateResult.error && isMissingImageMetadataColumn(updateResult.error)) {
-    const fallbackResult = await authResult.adminClient
+    const fallbackResult = await adminClient
       .from("menu_items")
-      .update({ image_url: imageUrl, updated_at: updatePayload.updated_at })
+      .update({ image_url: imageUrl, updated_at: updatedAt })
       .eq("id", id)
       .select("id")
       .maybeSingle();
 
-    if (fallbackResult.error || !fallbackResult.data) {
-      return NextResponse.json(
-        { error: `DB update failed: ${fallbackResult.error?.message ?? "menu item not found"}` },
-        { status: fallbackResult.error ? 500 : 404 },
-      );
+    databaseUpdated = !fallbackResult.error && Boolean(fallbackResult.data);
+    if (fallbackResult.error) {
+      console.error("[menu-image-upload] fallback database update failed", {
+        itemId: id,
+        path,
+        requestId,
+        code: fallbackResult.error.code,
+        message: fallbackResult.error.message,
+      });
     }
-  } else if (updateResult.error || !updateResult.data) {
+  } else if (updateResult.error) {
+    console.error("[menu-image-upload] database update failed", {
+      itemId: id,
+      path,
+      requestId,
+      code: updateResult.error.code,
+      message: updateResult.error.message,
+    });
+  }
+
+  if (!databaseUpdated) {
+    const rollback = await adminClient.storage.from(bucket).remove([path]);
+    if (rollback.error) {
+      console.error("[menu-image-upload] rollback cleanup failed", {
+        itemId: id,
+        path,
+        requestId,
+        message: rollback.error.message,
+      });
+    }
+
     return NextResponse.json(
-      { error: `DB update failed: ${updateResult.error?.message ?? "menu item not found"}` },
-      { status: updateResult.error ? 500 : 404 },
+      { error: "Image metadata could not be saved; the upload was rolled back.", requestId },
+      { status: 500 },
     );
   }
 
   if (menuItem.imagePath && menuItem.imagePath !== path) {
-    await authResult.adminClient.storage
+    const cleanup = await adminClient.storage
       .from(menuItem.imageBucket || bucket)
-      .remove([menuItem.imagePath])
-      .then(({ error }) => {
-        if (error) {
-          console.warn("[menu-image-upload] old image cleanup failed", {
-            itemId: id,
-            path: menuItem.imagePath,
-            error: error.message,
-          });
-        }
+      .remove([menuItem.imagePath]);
+
+    if (cleanup.error) {
+      console.warn("[menu-image-upload] old image cleanup failed", {
+        itemId: id,
+        path: menuItem.imagePath,
+        requestId,
+        message: cleanup.error.message,
       });
+    }
   }
 
-  return NextResponse.json({ path, imageUrl }, { status: 200 });
+  return NextResponse.json({ path, imageUrl, requestId }, { status: 200 });
 }
