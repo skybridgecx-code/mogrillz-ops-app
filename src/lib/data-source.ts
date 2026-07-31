@@ -1,6 +1,11 @@
-import { cloneMockSnapshot } from "@/lib/mock-data";
 import { normalizeOrderStatus } from "@/lib/dashboard/order-status";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  getBusinessDate,
+  getInventoryHealthPercent,
+  getOrdersForBusinessDate,
+  getRecognizedRevenueCents,
+} from "@/lib/dashboard/metrics";
+import { cloneMockSnapshot } from "@/lib/mock-data";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   Customer,
@@ -22,8 +27,112 @@ export interface DashboardDataState {
   dataIssue: string | null;
 }
 
-const IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 365;
-const DEFAULT_IMAGE_BUCKET = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || "food pics";
+const DEFAULT_IMAGE_BUCKET = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || "menu-images";
+const ORDER_HISTORY_LIMIT = readBoundedIntegerEnv("MOGRILLZ_OPS_ORDER_HISTORY_LIMIT", 500, 50, 2000);
+const CUSTOMER_LIMIT = readBoundedIntegerEnv("MOGRILLZ_OPS_CUSTOMER_LIMIT", 1000, 50, 5000);
+const SUBSCRIBER_LIMIT = readBoundedIntegerEnv("MOGRILLZ_OPS_SUBSCRIBER_LIMIT", 1000, 50, 5000);
+const INSIGHT_LIMIT = readBoundedIntegerEnv("MOGRILLZ_OPS_INSIGHT_LIMIT", 50, 1, 250);
+
+const ORDER_SELECT = [
+  "id",
+  "order_number",
+  "customer_id",
+  "customer_name",
+  "customer_email",
+  "status",
+  "drop_day",
+  "service_date",
+  "fulfillment_method",
+  "delivery_window",
+  "zone",
+  "total_cents",
+  "custom_request",
+  "operator_note",
+  "payment_provider",
+  "payment_status",
+  "version",
+  "prep_started_at",
+  "ready_at",
+  "picked_up_at",
+  "cancelled_at",
+  "created_at",
+  "updated_at",
+  "order_items(id,order_id,menu_item_id,name,quantity,notes,unit_price_cents)",
+].join(",");
+
+const INVENTORY_SELECT = [
+  "id",
+  "name",
+  "unit",
+  "on_hand_qty",
+  "par_level",
+  "status",
+  "notes",
+  "updated_at",
+].join(",");
+
+const MENU_SELECT = [
+  "id",
+  "slug",
+  "name",
+  "category",
+  "price_cents",
+  "availability",
+  "allocation_limit",
+  "description",
+  "image_url",
+  "image_path",
+  "image_bucket",
+  "sort_order",
+  "is_featured",
+  "is_active",
+  "notes",
+  "calories",
+  "protein_g",
+  "carbs_g",
+  "fat_g",
+  "updated_at",
+].join(",");
+
+const CUSTOMER_SELECT = [
+  "id",
+  "name",
+  "email",
+  "zone",
+  "total_orders",
+  "lifetime_value_cents",
+  "loyalty_tier",
+  "notes",
+  "updated_at",
+].join(",");
+
+const INSIGHT_SELECT = [
+  "id",
+  "type",
+  "title",
+  "summary",
+  "confidence",
+  "action_text",
+  "created_at",
+].join(",");
+
+const REMINDER_SELECT = [
+  "id",
+  "email",
+  "source",
+  "signup_location",
+  "status",
+  "notes",
+  "last_requested_at",
+  "created_at",
+  "updated_at",
+].join(",");
+
+function readBoundedIntegerEnv(name: string, fallback: number, min: number, max: number) {
+  const parsed = Number(process.env[name]);
+  if (!Number.isInteger(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
 
 function shouldUseMockData() {
   const raw = process.env.NEXT_PUBLIC_USE_MOCK_DATA?.trim().toLowerCase();
@@ -40,6 +149,7 @@ function hasSupabaseDataConfig() {
 }
 
 type Row = Record<string, unknown>;
+type SupabaseServerClient = NonNullable<ReturnType<typeof createSupabaseServerClient>>;
 
 function readString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -73,14 +183,10 @@ function normalizeMenuAvailability(value: unknown): MenuItem["availability"] {
   const raw = readString(value).trim().toLowerCase().replace(/[_-]+/g, " ");
 
   if (!raw) return "Live";
-  if (raw === "live" || raw === "active" || raw === "available" || raw === "enabled" || raw === "true") {
-    return "Live";
-  }
-  if (raw === "watch" || raw === "draft" || raw === "pending") return "Watch";
-  if (raw === "paused" || raw === "pause" || raw === "inactive" || raw === "disabled" || raw === "false") {
-    return "Paused";
-  }
-  if (raw === "sold out" || raw === "soldout" || raw === "out" || raw === "unavailable") return "Sold Out";
+  if (["live", "active", "available", "enabled", "true"].includes(raw)) return "Live";
+  if (["watch", "draft", "pending"].includes(raw)) return "Watch";
+  if (["paused", "pause", "inactive", "disabled", "false"].includes(raw)) return "Paused";
+  if (["sold out", "soldout", "out", "unavailable"].includes(raw)) return "Sold Out";
 
   return "Live";
 }
@@ -91,76 +197,36 @@ function resolveMenuAvailability(row: Row): MenuItem["availability"] {
 
   if (isActive === true) return "Live";
   if (isActive === false && availability === "Live") return "Paused";
-
   return availability;
 }
 
-async function resolveMenuImageUrl(
-  storageClient: ReturnType<typeof createSupabaseAdminClient>,
-  row: Row,
-) {
+function resolveMenuImageUrl(client: SupabaseServerClient, row: Row) {
   const imageUrl = readNullableString(row.image_url);
   if (imageUrl) return imageUrl;
 
   const imagePath = readNullableString(row.image_path);
-  if (!storageClient || !imagePath) return null;
+  if (!imagePath) return null;
 
   const imageBucket = readNullableString(row.image_bucket) || DEFAULT_IMAGE_BUCKET;
-  const { data, error } = await storageClient.storage
-    .from(imageBucket)
-    .createSignedUrl(imagePath, IMAGE_SIGNED_URL_TTL_SECONDS);
-
-  if (error || !data?.signedUrl) return null;
-  return data.signedUrl;
-}
-
-function normalizeDeliveryWindow(value: unknown, fulfillmentMethod: Order["fulfillmentMethod"]) {
-  const raw = readString(value).trim();
-  const fallback =
-    fulfillmentMethod === "pickup"
-      ? "Pickup details confirmed after checkout"
-      : "Pickup details confirmed after checkout";
-
-  if (!raw) return fallback;
-
-  const normalizedRaw = raw.toLowerCase();
-  if (
-    normalizedRaw === "pending route confirmation" ||
-    normalizedRaw === "delivery timing confirmed after checkout" ||
-    normalizedRaw === "delivery details confirmed after checkout"
-  ) {
-    return fallback;
-  }
-
-  if (fulfillmentMethod === "pickup") {
-    return raw
-      .replace(/\bdelivery\b/gi, "pickup")
-      .replace(/\broute\b/gi, "pickup");
-  }
-
-  return raw;
+  return client.storage.from(imageBucket).getPublicUrl(imagePath).data.publicUrl || null;
 }
 
 function normalizeServiceDateValue(value: unknown) {
   if (typeof value === "string") {
     const raw = value.trim();
     if (!raw) return null;
-
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-    const datePrefixMatch = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
-    if (datePrefixMatch?.[1]) return datePrefixMatch[1];
+
+    const prefix = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/)?.[1];
+    if (prefix) return prefix;
 
     const parsed = new Date(raw);
-    if (Number.isFinite(parsed.getTime())) {
-      return parsed.toISOString().slice(0, 10);
-    }
+    if (Number.isFinite(parsed.getTime())) return parsed.toISOString().slice(0, 10);
   }
 
   if (typeof value === "number" && Number.isFinite(value)) {
     const parsed = new Date(value);
-    if (Number.isFinite(parsed.getTime())) {
-      return parsed.toISOString().slice(0, 10);
-    }
+    if (Number.isFinite(parsed.getTime())) return parsed.toISOString().slice(0, 10);
   }
 
   return null;
@@ -199,7 +265,7 @@ function resolveServiceWindow(row: Row) {
     if (raw) return raw;
   }
 
-  return "";
+  return "Pickup details confirmed after checkout";
 }
 
 function mapOrderItem(row: Row): OrderItem {
@@ -216,8 +282,13 @@ function mapOrderItem(row: Row): OrderItem {
 
 function mapOrder(row: Row): Order {
   const nestedItems = Array.isArray(row.order_items) ? row.order_items : [];
-  const fulfillmentMethod = readString(row.fulfillment_method, "pickup").toLowerCase() === "delivery" ? "delivery" : "pickup";
+  const fulfillmentMethod =
+    readString(row.fulfillment_method, "pickup").toLowerCase() === "delivery"
+      ? "delivery"
+      : "pickup";
   const id = readString(row.id, crypto.randomUUID());
+  const createdAt = readString(row.created_at, new Date().toISOString());
+
   return {
     id,
     orderNumber: readString(row.order_number, id),
@@ -226,16 +297,22 @@ function mapOrder(row: Row): Order {
     customerZone: readString(row.zone, "Northern Virginia"),
     status: normalizeOrderStatus(row.status) ?? "New",
     serviceDate: resolveServiceDate(row),
-    legacyDropDay: typeof row.drop_day === "string" ? capitalizeWords(readString(row.drop_day), "") : null,
+    legacyDropDay:
+      typeof row.drop_day === "string" ? capitalizeWords(readString(row.drop_day), "") : null,
     fulfillmentMethod,
-    serviceWindow: normalizeDeliveryWindow(resolveServiceWindow(row), fulfillmentMethod),
+    serviceWindow: resolveServiceWindow(row),
     totalCents: readNumber(row.total_cents, 0),
     customRequest: typeof row.custom_request === "string" ? row.custom_request : null,
     operatorNote: typeof row.operator_note === "string" ? row.operator_note : null,
     paymentProvider: readString(row.payment_provider, "Stripe"),
-    paymentStatus: readString(row.payment_status, "paid"),
-    createdAt: readString(row.created_at, new Date().toISOString()),
-    updatedAt: readString(row.updated_at, readString(row.created_at, new Date().toISOString())),
+    paymentStatus: readString(row.payment_status, "unpaid"),
+    version: readNumber(row.version, 0),
+    prepStartedAt: readNullableString(row.prep_started_at),
+    readyAt: readNullableString(row.ready_at),
+    pickedUpAt: readNullableString(row.picked_up_at),
+    cancelledAt: readNullableString(row.cancelled_at),
+    createdAt,
+    updatedAt: readString(row.updated_at, createdAt),
     items: nestedItems.map((item) => mapOrderItem(item as Row)),
   };
 }
@@ -254,9 +331,13 @@ function mapInventoryItem(row: Row, linkedMenuItems: InventoryLinkedMenuItem[] =
   };
 }
 
-function mapMenuItem(row: Row, resolvedImageUrl: string | null = readNullableString(row.image_url)): MenuItem {
+function mapMenuItem(
+  client: SupabaseServerClient,
+  row: Row,
+): MenuItem {
   const slug = readString(row.slug, readString(row.id, crypto.randomUUID()));
   const storedImageUrl = readNullableString(row.image_url);
+
   return {
     id: readString(row.id, slug),
     slug,
@@ -266,7 +347,7 @@ function mapMenuItem(row: Row, resolvedImageUrl: string | null = readNullableStr
     availability: resolveMenuAvailability(row),
     allocationLimit: readNumber(row.allocation_limit, 0),
     description: readString(row.description, ""),
-    imageUrl: resolvedImageUrl,
+    imageUrl: resolveMenuImageUrl(client, row),
     storedImageUrl,
     imagePath: readNullableString(row.image_path),
     imageBucket: readNullableString(row.image_bucket),
@@ -274,10 +355,10 @@ function mapMenuItem(row: Row, resolvedImageUrl: string | null = readNullableStr
     isFeatured: Boolean(row.is_featured),
     isActive: typeof row.is_active === "boolean" ? row.is_active : null,
     notes: typeof row.notes === "string" ? row.notes : null,
-    calories: typeof row.calories === "number" ? row.calories : null,
-    proteinG: typeof row.protein_g === "number" ? row.protein_g : null,
-    carbsG: typeof row.carbs_g === "number" ? row.carbs_g : null,
-    fatG: typeof row.fat_g === "number" ? row.fat_g : null,
+    calories: row.calories == null ? null : readNumber(row.calories),
+    proteinG: row.protein_g == null ? null : readNumber(row.protein_g),
+    carbsG: row.carbs_g == null ? null : readNumber(row.carbs_g),
+    fatG: row.fat_g == null ? null : readNumber(row.fat_g),
   };
 }
 
@@ -297,6 +378,7 @@ function mapCustomer(row: Row): Customer {
 }
 
 function mapEmailUpdate(row: Row): EmailUpdate {
+  const createdAt = readString(row.created_at, new Date().toISOString());
   return {
     id: readString(row.id, crypto.randomUUID()),
     email: readString(row.email),
@@ -304,9 +386,9 @@ function mapEmailUpdate(row: Row): EmailUpdate {
     signupLocation: typeof row.signup_location === "string" ? row.signup_location : null,
     status: capitalizeWords(readString(row.status), "Active") as EmailUpdate["status"],
     notes: typeof row.notes === "string" ? row.notes : null,
-    lastRequestedAt: readString(row.last_requested_at, new Date().toISOString()),
-    createdAt: readString(row.created_at, new Date().toISOString()),
-    updatedAt: readString(row.updated_at, readString(row.created_at, new Date().toISOString())),
+    lastRequestedAt: readString(row.last_requested_at, createdAt),
+    createdAt,
+    updatedAt: readString(row.updated_at, createdAt),
   };
 }
 
@@ -337,7 +419,7 @@ function mapInsight(row: Row): Insight {
     summary: readString(row.summary, ""),
     confidence: readNumber(row.confidence, 0),
     actionText: readString(row.action_text, "No action recorded."),
-    tone: toneByType[type] ?? "info",
+    tone: toneByType[type],
     createdAt: readString(row.created_at, new Date().toISOString()),
   };
 }
@@ -351,10 +433,10 @@ function formatCompactCurrency(cents: number) {
 }
 
 function formatServiceDateLabel(serviceDate: string | null) {
-  if (!serviceDate) return "Upcoming";
+  if (!serviceDate) return "Unscheduled";
 
   const parsed = new Date(`${serviceDate}T12:00:00`);
-  if (!Number.isFinite(parsed.getTime())) return "Upcoming";
+  if (!Number.isFinite(parsed.getTime())) return "Unscheduled";
 
   return parsed.toLocaleDateString("en-US", {
     month: "short",
@@ -363,100 +445,93 @@ function formatServiceDateLabel(serviceDate: string | null) {
 }
 
 function deriveOperationsSnapshot(orders: Order[]): DashboardSnapshot["operations"] {
-  if (!orders.length) {
+  const activeOrders = orders.filter((order) =>
+    ["New", "In Prep", "Ready"].includes(order.status),
+  );
+
+  if (!activeOrders.length) {
     return {
       serviceDateLabel: "Upcoming",
-      status: "No live orders",
-      queueSummary: "Awaiting synced orders",
+      status: "No active orders",
+      queueSummary: "The live kitchen queue is clear",
       serviceWindow: "Pickup details confirmed after checkout",
     };
   }
 
-  const ordersByDate = new Map<string, Order[]>();
-  for (const order of orders) {
-    const key = order.serviceDate || order.legacyDropDay || "unscheduled";
-    const existing = ordersByDate.get(key) ?? [];
-    existing.push(order);
-    ordersByDate.set(key, existing);
-  }
-
-  let activeKey = orders[0].serviceDate || orders[0].legacyDropDay || "unscheduled";
-  let activeOrders = ordersByDate.get(activeKey) ?? [orders[0]];
-
-  for (const [key, dateOrders] of ordersByDate.entries()) {
-    if (dateOrders.length > activeOrders.length) {
-      activeKey = key;
-      activeOrders = dateOrders;
-    }
-  }
-
-  const activeStatuses = new Set(activeOrders.map((order) => order.status));
-  const status =
-    activeStatuses.has("In Prep") || activeStatuses.has("Ready") || activeStatuses.has("New")
-      ? "Orders Active"
-      : "Service Wrapped";
-
-  const windows = [...new Set(activeOrders.map((order) => order.serviceWindow).filter(Boolean))];
-  const serviceWindow =
-    windows.length === 0
-      ? "Window pending"
-      : windows.length === 1
-        ? windows[0]
-        : `${windows.length} live fulfillment windows`;
+  const businessDate = getBusinessDate();
+  const futureDates = [...new Set(activeOrders.map((order) => order.serviceDate).filter(Boolean) as string[])]
+    .filter((date) => date >= businessDate)
+    .sort();
+  const selectedDate = futureDates[0] ?? null;
+  const selectedOrders = selectedDate
+    ? activeOrders.filter((order) => order.serviceDate === selectedDate)
+    : activeOrders.filter((order) => !order.serviceDate);
+  const operationalOrders = selectedOrders.length ? selectedOrders : activeOrders;
+  const windows = [...new Set(operationalOrders.map((order) => order.serviceWindow).filter(Boolean))];
 
   return {
-    serviceDateLabel:
-      activeKey === "unscheduled"
-        ? "Upcoming"
-        : activeOrders[0]?.serviceDate
-          ? formatServiceDateLabel(activeOrders[0].serviceDate)
-          : activeKey,
-    status,
-    queueSummary: `${activeOrders.length} synced orders`,
-    serviceWindow,
+    serviceDateLabel: formatServiceDateLabel(selectedDate),
+    status: "Orders Active",
+    queueSummary: `${operationalOrders.length} active order${operationalOrders.length === 1 ? "" : "s"} for the selected service run`,
+    serviceWindow:
+      windows.length === 0
+        ? "Window pending"
+        : windows.length === 1
+          ? windows[0]
+          : `${windows.length} pickup windows`,
   };
 }
 
 function deriveKpis(orders: Order[], inventory: InventoryItem[]): DashboardSnapshot["kpis"] {
-  const pickupCount = orders.filter((order) => order.fulfillmentMethod === "pickup").length;
-  const totalRevenueCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
-  const lowStockCount = inventory.filter((item) => item.status === "Low" || item.status === "Out").length;
-  const healthyInventoryCount = inventory.filter((item) => item.status !== "Low" && item.status !== "Out").length;
-  const prepConfidence = inventory.length
-    ? Math.round((healthyInventoryCount / inventory.length) * 100)
-    : 100;
+  const todayOrders = getOrdersForBusinessDate(orders);
+  const recognizedRevenueCents = getRecognizedRevenueCents(orders);
+  const lowStockCount = inventory.filter(
+    (item) => item.status === "Low" || item.status === "Out",
+  ).length;
+  const inventoryHealth = getInventoryHealthPercent(inventory);
 
   return [
     {
-      label: "Today's Orders",
-      value: String(orders.length),
-      delta: `${pickupCount} next-day pickup`,
+      label: "Today's Service Orders",
+      value: String(todayOrders.length),
+      delta: "Non-cancelled orders scheduled for today",
       tone: "gold",
     },
     {
-      label: "Revenue To Date",
-      value: formatCompactCurrency(totalRevenueCents),
-      delta: `${orders.length} paid synced orders`,
+      label: "Paid Revenue To Date",
+      value: formatCompactCurrency(recognizedRevenueCents),
+      delta: "Excludes unpaid and cancelled orders",
       tone: "green",
     },
     {
       label: "Low Stock Items",
       value: String(lowStockCount),
-      delta: lowStockCount ? "Needs attention before prep" : "All stocked for service",
+      delta: lowStockCount ? "Needs attention before prep" : "No low-stock flags",
       tone: lowStockCount ? "red" : "green",
     },
     {
-      label: "Prep Confidence",
-      value: `${prepConfidence}%`,
-      delta: "Based on current inventory health",
+      label: "Inventory Health",
+      value: inventoryHealth === null ? "—" : `${inventoryHealth}%`,
+      delta:
+        inventoryHealth === null
+          ? "No inventory rows loaded"
+          : "Share of tracked items not marked low or out",
       tone: "blue",
     },
   ];
 }
 
+function logQueryError(section: string, error: { code?: string; message?: string } | null) {
+  if (!error) return;
+  console.error("[dashboard-data] query failed", {
+    section,
+    code: error.code,
+    message: error.message,
+  });
+}
+
 async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
   const client = createSupabaseServerClient();
-
   if (!client) return null;
 
   try {
@@ -467,34 +542,57 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
       customersResponse,
       insightsResponse,
       inventoryLinksResponse,
-      dropRemindersResponse,
-    ] =
-      await Promise.all([
-        client.from("orders").select("*, order_items(*)"),
-        client.from("inventory_items").select("*"),
-        client.from("menu_items").select("*"),
-        client.from("customers").select("*"),
-        client.from("insights").select("*"),
-        client.from("inventory_item_menu_links").select("inventory_item_id,menu_item_id"),
-        client.from("drop_reminders").select("*"),
-      ]);
+      remindersResponse,
+    ] = await Promise.all([
+      client
+        .from("orders")
+        .select(ORDER_SELECT)
+        .order("created_at", { ascending: false })
+        .limit(ORDER_HISTORY_LIMIT),
+      client.from("inventory_items").select(INVENTORY_SELECT).order("name").limit(1000),
+      client.from("menu_items").select(MENU_SELECT).order("sort_order").limit(1000),
+      client
+        .from("customers")
+        .select(CUSTOMER_SELECT)
+        .order("updated_at", { ascending: false })
+        .limit(CUSTOMER_LIMIT),
+      client
+        .from("insights")
+        .select(INSIGHT_SELECT)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(INSIGHT_LIMIT),
+      client
+        .from("inventory_item_menu_links")
+        .select("inventory_item_id,menu_item_id")
+        .limit(5000),
+      client
+        .from("drop_reminders")
+        .select(REMINDER_SELECT)
+        .order("last_requested_at", { ascending: false })
+        .limit(SUBSCRIBER_LIMIT),
+    ]);
 
-    if (
-      ordersResponse.error ||
-      inventoryResponse.error ||
-      menuResponse.error ||
-      customersResponse.error ||
-      insightsResponse.error
-    ) {
-      return null;
+    const criticalErrors = [
+      ["orders", ordersResponse.error],
+      ["inventory", inventoryResponse.error],
+      ["menu", menuResponse.error],
+    ] as const;
+
+    for (const [section, error] of criticalErrors) {
+      if (error) logQueryError(section, error);
     }
+
+    if (criticalErrors.some(([, error]) => Boolean(error))) return null;
+
+    logQueryError("customers", customersResponse.error);
+    logQueryError("insights", insightsResponse.error);
+    logQueryError("inventory-links", inventoryLinksResponse.error);
+    logQueryError("subscribers", remindersResponse.error);
 
     const orders = (ordersResponse.data ?? []).map((row) => mapOrder(row as Row));
     const menuRows = (menuResponse.data ?? []) as Row[];
-    const storageClient = createSupabaseAdminClient();
-    const menu = await Promise.all(
-      menuRows.map(async (row) => mapMenuItem(row, await resolveMenuImageUrl(storageClient, row))),
-    );
+    const menu = menuRows.map((row) => mapMenuItem(client, row));
     const menuByDatabaseId = new Map(
       menuRows.map((row) => {
         const databaseId = readString(row.id);
@@ -511,7 +609,8 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
 
     if (!inventoryLinksResponse.error) {
       for (const row of inventoryLinksResponse.data ?? []) {
-        const inventoryItemId = typeof row.inventory_item_id === "string" ? row.inventory_item_id : "";
+        const inventoryItemId =
+          typeof row.inventory_item_id === "string" ? row.inventory_item_id : "";
         const menuItemId = typeof row.menu_item_id === "string" ? row.menu_item_id : "";
         if (!inventoryItemId || !menuItemId) continue;
 
@@ -530,11 +629,15 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
         linkedMenuItemsByInventoryId.get(readString((row as Row).id)) ?? [],
       ),
     );
-    const customers = (customersResponse.data ?? []).map((row) => mapCustomer(row as Row));
-    const emailUpdates = dropRemindersResponse.error
+    const customers = customersResponse.error
       ? []
-      : (dropRemindersResponse.data ?? []).map((row) => mapEmailUpdate(row as Row));
-    const insights = (insightsResponse.data ?? []).map((row) => mapInsight(row as Row));
+      : (customersResponse.data ?? []).map((row) => mapCustomer(row as Row));
+    const emailUpdates = remindersResponse.error
+      ? []
+      : (remindersResponse.data ?? []).map((row) => mapEmailUpdate(row as Row));
+    const insights = insightsResponse.error
+      ? []
+      : (insightsResponse.data ?? []).map((row) => mapInsight(row as Row));
 
     return {
       generatedAt: new Date().toISOString(),
@@ -547,7 +650,10 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
       emailUpdates,
       insights,
     };
-  } catch {
+  } catch (error) {
+    console.error("[dashboard-data] unexpected load failure", {
+      message: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -583,17 +689,14 @@ export async function loadDashboardDataState(): Promise<DashboardDataState> {
     snapshot: null,
     dataSource: "supabase",
     dataIssue:
-      "Supabase data could not be loaded. The dashboard is intentionally hiding fallback demo data until the connection is healthy again.",
+      "Critical operations data could not be loaded. Check the deployment logs and verify the required database migration is applied.",
   };
 }
 
 export async function loadDashboardSnapshot(): Promise<DashboardSnapshot> {
   const result = await loadDashboardDataState();
 
-  if (result.snapshot) {
-    return result.snapshot;
-  }
-
+  if (result.snapshot) return result.snapshot;
   throw new Error(result.dataIssue ?? "Dashboard data unavailable.");
 }
 
