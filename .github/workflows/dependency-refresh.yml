@@ -21,7 +21,7 @@ jobs:
       NEXT_PUBLIC_USE_MOCK_DATA: "true"
 
     steps:
-      - name: Check out hardening branch
+      - name: Check out frozen hardening branch
         uses: actions/checkout@v4
         with:
           ref: agent/ops-hardening-phase-0-1a
@@ -32,9 +32,9 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Resolve patched dependency graph
+      - name: Resolve reviewed dependency versions
         run: |
-          npm install --package-lock-only --ignore-scripts next@16.2.12 eslint-config-next@16.2.12
+          npm install --package-lock-only --ignore-scripts --save-exact next@16.2.12 eslint-config-next@16.2.12 sharp@0.35.0
           npm audit fix --package-lock-only --ignore-scripts
 
       - name: Verify production dependency audit
