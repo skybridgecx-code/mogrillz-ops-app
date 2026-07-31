@@ -10,6 +10,7 @@ import {
   getNextOrderStatus,
   getOrderStatusDisplayLabel,
   getPickupTimingLabel,
+  isRiskyOrderStatusTransition,
 } from "@/lib/dashboard/order-status";
 import type { Order, OrderStatus } from "@/types/domain";
 
@@ -34,6 +35,7 @@ function OrderTicket({
   onAdvance: (next: OrderStatus) => void;
 }) {
   const next = getNextOrderStatus(order.status);
+  const requiresReview = next ? isRiskyOrderStatusTransition(order.status, next) : false;
 
   return (
     <div
@@ -60,11 +62,15 @@ function OrderTicket({
             disabled={busy}
             onClick={(event) => {
               event.stopPropagation();
+              if (requiresReview) {
+                onOpen();
+                return;
+              }
               onAdvance(next);
             }}
             type="button"
           >
-            {busy ? "…" : `→ ${next === "Picked Up" ? "Done" : next}`}
+            {busy ? "…" : requiresReview ? "Review pickup" : `→ ${next}`}
           </button>
         ) : null}
       </div>
@@ -89,6 +95,7 @@ function OrderSheet({
 }) {
   const [note, setNote] = useState(order.operatorNote ?? "");
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmPickup, setConfirmPickup] = useState(false);
   const next = getNextOrderStatus(order.status);
 
   async function run(action: () => Promise<boolean>, closeAfter = false) {
@@ -147,7 +154,35 @@ function OrderSheet({
         Save note
       </button>
 
-      {next ? (
+      {next === "Picked Up" ? (
+        confirmPickup ? (
+          <div className="callout warning">
+            Confirm pickup for <strong>{order.orderNumber}</strong> · {order.customerName}? This records the order as completed and timestamps the pickup.
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.6rem" }}>
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={busy}
+                onClick={() => run(() => api.advanceOrder(order.id, "Picked Up"), true)}
+                type="button"
+              >
+                {busy ? "Working…" : "Yes, mark picked up"}
+              </button>
+              <button className="btn btn-sm" onClick={() => setConfirmPickup(false)} type="button">
+                Not yet
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="btn btn-primary btn-block"
+            disabled={busy}
+            onClick={() => setConfirmPickup(true)}
+            type="button"
+          >
+            Mark picked up…
+          </button>
+        )
+      ) : next ? (
         <button
           className="btn btn-primary btn-block"
           disabled={busy}
@@ -161,7 +196,7 @@ function OrderSheet({
       {canCancelOrderStatus(order.status) ? (
         confirmCancel ? (
           <div className="callout danger">
-            Cancel this order for good?
+            Cancel <strong>{order.orderNumber}</strong> · {order.customerName} from <strong>{getOrderStatusDisplayLabel(order.status)}</strong>?
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.6rem" }}>
               <button
                 className="btn btn-sm btn-danger"
