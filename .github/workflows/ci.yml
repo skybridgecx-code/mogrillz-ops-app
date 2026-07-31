@@ -31,3 +31,38 @@ jobs:
 
       - name: Run public quality gate
         run: npm run check
+
+  database-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mogrillz_contract
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mogrillz_contract"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes postgresql-client
+
+      - name: Apply schema and run lifecycle contract
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGDATABASE: mogrillz_contract
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql --set ON_ERROR_STOP=1 --file tests/sql/order-lifecycle-contract.sql
