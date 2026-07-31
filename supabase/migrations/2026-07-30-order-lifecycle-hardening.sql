@@ -1,5 +1,5 @@
 -- Operations schema reconciliation and order lifecycle hardening.
--- Apply before deploying application code that calls transition_order_status().
+-- Apply before deploying application code that calls these RPCs.
 
 alter table public.menu_items add column if not exists image_url text;
 alter table public.menu_items add column if not exists image_path text;
@@ -73,7 +73,6 @@ declare
   v_current_status text;
   v_current_normalized text;
   v_next_normalized text;
-  v_next_storage text;
   v_version bigint;
   v_now timestamptz := now();
   v_existing_event public.order_status_events%rowtype;
@@ -85,6 +84,10 @@ begin
   if not public.is_admin_user() then
     return jsonb_build_object('success', false, 'error', 'forbidden');
   end if;
+
+  -- Serialize retries that carry the same idempotency key. Without this lock,
+  -- two concurrent first attempts could both miss the event lookup.
+  perform pg_advisory_xact_lock(hashtextextended(p_request_id::text, 0));
 
   select *
   into v_existing_event
@@ -164,11 +167,9 @@ begin
     );
   end if;
 
-  v_next_storage := v_next_normalized;
-
   update public.orders
   set
-    status = v_next_storage,
+    status = v_next_normalized,
     version = version + 1,
     prep_started_at = case
       when v_next_normalized = 'in prep' then coalesce(prep_started_at, v_now)
@@ -221,6 +222,65 @@ $$;
 revoke all on function public.transition_order_status(uuid, text, uuid) from public;
 grant execute on function public.transition_order_status(uuid, text, uuid) to authenticated;
 
+create or replace function public.get_ops_dashboard_metrics(
+  p_business_date date
+)
+returns jsonb
+language plpgsql
+stable
+security invoker
+set search_path = public
+as $$
+declare
+  v_result jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'unauthorized' using errcode = '42501';
+  end if;
+
+  if not public.is_admin_user() then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+
+  select jsonb_build_object(
+    'business_date', p_business_date,
+    'today_order_count', (
+      select count(*)
+      from public.orders
+      where service_date = p_business_date
+        and lower(trim(coalesce(status, ''))) not in ('cancelled', 'canceled')
+    ),
+    'recognized_revenue_cents', (
+      select coalesce(sum(greatest(total_cents, 0)), 0)
+      from public.orders
+      where lower(trim(coalesce(status, ''))) not in ('cancelled', 'canceled')
+        and lower(trim(coalesce(payment_status, ''))) in (
+          'paid', 'succeeded', 'complete', 'completed', 'captured'
+        )
+    ),
+    'low_stock_count', (
+      select count(*)
+      from public.inventory_items
+      where lower(trim(coalesce(status, ''))) in ('low', 'out')
+    ),
+    'inventory_count', (
+      select count(*)
+      from public.inventory_items
+    ),
+    'healthy_inventory_count', (
+      select count(*)
+      from public.inventory_items
+      where lower(trim(coalesce(status, ''))) not in ('low', 'out')
+    )
+  ) into v_result;
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.get_ops_dashboard_metrics(date) from public;
+grant execute on function public.get_ops_dashboard_metrics(date) to authenticated;
+
 create or replace function public.ops_schema_version()
 returns bigint
 language sql
@@ -228,7 +288,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select 2026073001::bigint;
+  select 2026073002::bigint;
 $$;
 
 revoke all on function public.ops_schema_version() from public;
@@ -237,5 +297,7 @@ grant execute on function public.ops_schema_version() to service_role;
 
 comment on function public.transition_order_status(uuid, text, uuid)
   is 'Atomically validates and records an administrative order status transition.';
+comment on function public.get_ops_dashboard_metrics(date)
+  is 'Returns authoritative aggregate KPIs for the authenticated operations administrator.';
 comment on function public.ops_schema_version()
   is 'Returns the minimum application-compatible operations schema revision.';
