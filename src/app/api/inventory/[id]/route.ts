@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deriveInventoryStatus } from "@/lib/dashboard/inventory-status";
-import { userHasAdminMembership } from "@/lib/supabase/access";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireAdminRouteContext } from "@/lib/supabase/admin-context";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -39,22 +37,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Missing inventory id." }, { status: 400 });
   }
 
-  const supabase = createSupabaseServerClient();
-  if (!supabase) {
-    return NextResponse.json({ error: "Supabase is not configured." }, { status: 500 });
-  }
-
-  const claimsResult = await supabase.auth.getClaims();
-  const userId = typeof claimsResult.data?.claims?.sub === "string" ? claimsResult.data.claims.sub : null;
-
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
-
-  const isAdmin = await userHasAdminMembership(supabase, userId);
-  if (!isAdmin) {
-    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
-  }
+  const authResult = await requireAdminRouteContext();
+  if (!authResult.ok) return authResult.response;
 
   let onHand: number | undefined;
   let parLevel: number | undefined;
@@ -70,31 +54,21 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   if (typeof onHand === "undefined" || typeof parLevel === "undefined") {
-    return NextResponse.json({ error: "On-hand and par values must be non-negative numbers." }, { status: 400 });
+    return NextResponse.json(
+      { error: "On-hand and par values must be non-negative numbers." },
+      { status: 400 },
+    );
   }
 
   if (typeof notes === "undefined") {
-    return NextResponse.json({ error: "Inventory note must be under 400 characters." }, { status: 400 });
-  }
-
-  const adminClient = createSupabaseAdminClient();
-  if (!adminClient) {
-    return NextResponse.json({ error: "Supabase admin client is not configured." }, { status: 500 });
-  }
-
-  const existingResult = await adminClient
-    .from("inventory_items")
-    .select("id")
-    .eq("id", inventoryId)
-    .single();
-
-  if (existingResult.error || !existingResult.data) {
-    return NextResponse.json({ error: "Inventory item not found." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Inventory note must be under 400 characters." },
+      { status: 400 },
+    );
   }
 
   const status = deriveInventoryStatus(onHand, parLevel);
-
-  const updateResult = await adminClient
+  const updateResult = await authResult.context.supabase
     .from("inventory_items")
     .update({
       on_hand_qty: onHand,
@@ -104,10 +78,19 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
     .eq("id", inventoryId)
     .select("id,on_hand_qty,par_level,notes,status")
-    .single();
+    .maybeSingle();
 
-  if (updateResult.error || !updateResult.data) {
+  if (updateResult.error) {
+    console.error("[api/inventory] update failed", {
+      inventoryId,
+      code: updateResult.error.code,
+      message: updateResult.error.message,
+    });
     return NextResponse.json({ error: "Failed to update inventory item." }, { status: 500 });
+  }
+
+  if (!updateResult.data) {
+    return NextResponse.json({ error: "Inventory item not found." }, { status: 404 });
   }
 
   return NextResponse.json({
