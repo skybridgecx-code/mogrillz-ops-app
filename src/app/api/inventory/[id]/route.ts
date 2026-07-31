@@ -37,7 +37,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Missing inventory id." }, { status: 400 });
   }
 
-  const authResult = await requireAdminRouteContext();
+  const authResult = await requireAdminRouteContext({
+    request,
+    contentType: "json",
+  });
   if (!authResult.ok) return authResult.response;
 
   let onHand: number | undefined;
