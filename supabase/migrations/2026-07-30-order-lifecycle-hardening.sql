@@ -1,6 +1,25 @@
--- Order lifecycle hardening.
+-- Operations schema reconciliation and order lifecycle hardening.
 -- Apply before deploying application code that calls transition_order_status().
 
+alter table public.menu_items add column if not exists image_url text;
+alter table public.menu_items add column if not exists image_path text;
+alter table public.menu_items add column if not exists image_bucket text;
+alter table public.menu_items add column if not exists sort_order integer not null default 0;
+alter table public.menu_items add column if not exists is_featured boolean not null default false;
+alter table public.menu_items add column if not exists is_active boolean not null default false;
+alter table public.menu_items add column if not exists calories integer;
+alter table public.menu_items add column if not exists protein_g integer;
+alter table public.menu_items add column if not exists carbs_g integer;
+alter table public.menu_items add column if not exists fat_g integer;
+
+update public.menu_items
+set is_active = lower(trim(coalesce(availability, ''))) in ('live', 'active', 'available', 'enabled', 'true')
+where is_active is distinct from (
+  lower(trim(coalesce(availability, ''))) in ('live', 'active', 'available', 'enabled', 'true')
+);
+
+alter table public.orders add column if not exists operator_note text;
+alter table public.orders add column if not exists service_date date;
 alter table public.orders add column if not exists version bigint not null default 0;
 alter table public.orders add column if not exists prep_started_at timestamptz;
 alter table public.orders add column if not exists ready_at timestamptz;
