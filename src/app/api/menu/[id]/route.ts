@@ -6,8 +6,6 @@ import {
 } from "@/lib/supabase/admin-context";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
-const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
-const OPTIONAL_MENU_COLUMNS = [...MACRO_COLUMNS, "is_active"] as const;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -24,12 +22,12 @@ type MenuPayload = {
   image_url: string | null;
   sort_order: number;
   is_featured: boolean;
-  is_active?: boolean;
+  is_active: boolean;
   notes: string | null;
-  calories?: number | null;
-  protein_g?: number | null;
-  carbs_g?: number | null;
-  fat_g?: number | null;
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
 };
 
 function readOptionalInteger(value: unknown, min: number, max: number, field: string) {
@@ -49,23 +47,6 @@ function readOptionalInteger(value: unknown, min: number, max: number, field: st
   return Math.round(parsed);
 }
 
-function isMissingOptionalMenuColumn(error: { message?: string; code?: string } | null | undefined) {
-  const message = error?.message?.toLowerCase() ?? "";
-  return (
-    error?.code === "42703" ||
-    error?.code === "PGRST204" ||
-    OPTIONAL_MENU_COLUMNS.some((column) => message.includes(column))
-  );
-}
-
-function stripOptionalMenuColumns(payload: MenuPayload) {
-  const next = { ...payload };
-  for (const column of OPTIONAL_MENU_COLUMNS) {
-    delete next[column];
-  }
-  return next;
-}
-
 function slugify(value: string) {
   return value
     .trim()
@@ -76,14 +57,10 @@ function slugify(value: string) {
 }
 
 function readText(value: unknown, maxLength: number, field: string) {
-  if (typeof value !== "string") {
-    throw new Error(`${field} is required.`);
-  }
+  if (typeof value !== "string") throw new Error(`${field} is required.`);
 
   const normalized = value.trim();
-  if (!normalized) {
-    throw new Error(`${field} is required.`);
-  }
+  if (!normalized) throw new Error(`${field} is required.`);
   if (normalized.length > maxLength) {
     throw new Error(`${field} must be ${maxLength} characters or fewer.`);
   }
@@ -107,9 +84,7 @@ function readOptionalText(value: unknown, maxLength: number) {
 }
 
 function readAvailability(value: unknown) {
-  if (typeof value !== "string") {
-    throw new Error("Availability is required.");
-  }
+  if (typeof value !== "string") throw new Error("Availability is required.");
 
   const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
   const legacyMap: Record<string, (typeof MENU_AVAILABILITY_VALUES)[number]> = {
@@ -134,9 +109,7 @@ function readAvailability(value: unknown) {
   const match = MENU_AVAILABILITY_VALUES.find(
     (option) => option.toLowerCase() === normalized,
   );
-  if (!match) {
-    throw new Error("Availability is invalid.");
-  }
+  if (!match) throw new Error("Availability is invalid.");
 
   return match.toLowerCase();
 }
@@ -157,25 +130,19 @@ function readInteger(value: unknown, min: number, max: number, field: string) {
 }
 
 function readBoolean(value: unknown, field: string) {
-  if (typeof value !== "boolean") {
-    throw new Error(`${field} must be true or false.`);
-  }
-
+  if (typeof value !== "boolean") throw new Error(`${field} must be true or false.`);
   return value;
 }
 
 function readMenuPayload(body: unknown): MenuPayload {
   const data = (body ?? {}) as Record<string, unknown>;
   const name = readText(data.name, 120, "Name");
-  const slugInput = typeof data.slug === "string" ? data.slug : name;
-  const slug = slugify(slugInput);
+  const slug = slugify(typeof data.slug === "string" ? data.slug : name);
 
-  if (!slug) {
-    throw new Error("Slug is required.");
-  }
+  if (!slug) throw new Error("Slug is required.");
 
   const availability = readAvailability(data.availability);
-  const payload: MenuPayload = {
+  return {
     slug,
     name,
     category: readText(data.category, 60, "Category"),
@@ -188,24 +155,11 @@ function readMenuPayload(body: unknown): MenuPayload {
     sort_order: readInteger(data.sortOrder ?? 0, 0, 100000, "Sort order"),
     is_featured: readBoolean(data.isFeatured, "Featured flag"),
     notes: readOptionalText(data.notes, 400),
+    calories: readOptionalInteger(data.calories, 0, 5000, "Calories"),
+    protein_g: readOptionalInteger(data.proteinG, 0, 500, "Protein"),
+    carbs_g: readOptionalInteger(data.carbsG, 0, 500, "Carbs"),
+    fat_g: readOptionalInteger(data.fatG, 0, 500, "Fat"),
   };
-
-  const calories = readOptionalInteger(data.calories, 0, 5000, "Calories");
-  const proteinG = readOptionalInteger(data.proteinG, 0, 500, "Protein");
-  const carbsG = readOptionalInteger(data.carbsG, 0, 500, "Carbs");
-  const fatG = readOptionalInteger(data.fatG, 0, 500, "Fat");
-  const hasMacroInput = ["calories", "proteinG", "carbsG", "fatG"].some((key) =>
-    Object.prototype.hasOwnProperty.call(data, key),
-  );
-
-  if (hasMacroInput || calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
-    payload.calories = calories;
-    payload.protein_g = proteinG;
-    payload.carbs_g = carbsG;
-    payload.fat_g = fatG;
-  }
-
-  return payload;
 }
 
 async function resolveMenuId(client: AdminRouteContext["supabase"], key: string) {
@@ -266,21 +220,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Slug is already in use." }, { status: 409 });
   }
 
-  let updateResult = await client
+  const updateResult = await client
     .from("menu_items")
     .update(payload)
     .eq("id", resolvedMenuId)
     .select("*")
     .single();
-
-  if (updateResult.error && isMissingOptionalMenuColumn(updateResult.error)) {
-    updateResult = await client
-      .from("menu_items")
-      .update(stripOptionalMenuColumns(payload))
-      .eq("id", resolvedMenuId)
-      .select("*")
-      .single();
-  }
 
   if (updateResult.error || !updateResult.data) {
     console.error("[api/menu/[id]] update failed", {
