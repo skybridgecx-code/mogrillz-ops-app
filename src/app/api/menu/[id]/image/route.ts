@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 
 import { requireAdminRouteContext } from "@/lib/supabase/admin-context";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
+export const runtime = "nodejs";
+
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_INPUT_PIXELS = 40_000_000;
+const MAX_OUTPUT_DIMENSION = 1600;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"] as const;
 const DEFAULT_BUCKET = "menu-images";
 
@@ -13,39 +18,6 @@ type MenuImageMetadata = {
   imagePath: string | null;
   imageBucket: string | null;
 };
-
-function fileExtensionForType(type: string) {
-  if (type === "image/jpeg") return "jpg";
-  if (type === "image/png") return "png";
-  if (type === "image/webp") return "webp";
-  if (type === "image/avif") return "avif";
-  return null;
-}
-
-async function ensureMenuImageBucket(adminClient: AdminClient, bucket: string) {
-  const existing = await adminClient.storage.getBucket(bucket);
-
-  if (!existing.error) {
-    if (existing.data && !existing.data.public) {
-      const update = await adminClient.storage.updateBucket(bucket, {
-        public: true,
-        allowedMimeTypes: [...ALLOWED_IMAGE_TYPES],
-        fileSizeLimit: "5MB",
-      });
-      if (update.error) return update.error;
-    }
-
-    return null;
-  }
-
-  const create = await adminClient.storage.createBucket(bucket, {
-    public: true,
-    allowedMimeTypes: [...ALLOWED_IMAGE_TYPES],
-    fileSizeLimit: "5MB",
-  });
-
-  return create.error ?? null;
-}
 
 async function loadMenuImageMetadata(
   adminClient: AdminClient,
@@ -73,6 +45,59 @@ async function loadMenuImageMetadata(
     imagePath: typeof result.data.image_path === "string" ? result.data.image_path : null,
     imageBucket: typeof result.data.image_bucket === "string" ? result.data.image_bucket : null,
   };
+}
+
+async function verifyProvisionedBucket(adminClient: AdminClient, bucket: string) {
+  const result = await adminClient.storage.getBucket(bucket);
+  if (result.error || !result.data?.public) {
+    console.error("[menu-image-upload] storage bucket is not provisioned", {
+      bucket,
+      code: result.error?.name,
+      message: result.error?.message,
+    });
+    return false;
+  }
+  return true;
+}
+
+async function normalizeImage(file: File) {
+  const input = Buffer.from(await file.arrayBuffer());
+
+  try {
+    const metadata = await sharp(input, {
+      failOn: "warning",
+      limitInputPixels: MAX_INPUT_PIXELS,
+    }).metadata();
+
+    if (!metadata.width || !metadata.height) {
+      throw new Error("Image dimensions are unavailable.");
+    }
+
+    const output = await sharp(input, {
+      failOn: "warning",
+      limitInputPixels: MAX_INPUT_PIXELS,
+    })
+      .rotate()
+      .resize({
+        width: MAX_OUTPUT_DIMENSION,
+        height: MAX_OUTPUT_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 84, effort: 4 })
+      .toBuffer();
+
+    if (!output.length || output.length > MAX_IMAGE_SIZE) {
+      throw new Error("Normalized image exceeds the storage limit.");
+    }
+
+    return output;
+  } catch (error) {
+    console.warn("[menu-image-upload] image decode failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 export async function POST(
@@ -122,30 +147,29 @@ export async function POST(
     );
   }
 
-  const ext = fileExtensionForType(file.type);
-  if (!ext) {
-    return NextResponse.json({ error: "Unsupported image type.", requestId }, { status: 400 });
-  }
-
-  const bucket = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || DEFAULT_BUCKET;
-  const bucketError = await ensureMenuImageBucket(adminClient, bucket);
-  if (bucketError) {
-    console.error("[menu-image-upload] storage bucket setup failed", {
-      bucket,
-      requestId,
-      message: bucketError.message,
-    });
+  const normalizedImage = await normalizeImage(file);
+  if (!normalizedImage) {
     return NextResponse.json(
-      { error: "Storage is not ready for image uploads.", requestId },
-      { status: 500 },
+      { error: "The uploaded file is not a valid supported image.", requestId },
+      { status: 400 },
     );
   }
 
-  const path = `items/${id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-  const bytes = await file.arrayBuffer();
+  const bucket = process.env.MOGRILLZ_MENU_IMAGE_BUCKET?.trim() || DEFAULT_BUCKET;
+  if (!(await verifyProvisionedBucket(adminClient, bucket))) {
+    return NextResponse.json(
+      {
+        error: "Image storage is not provisioned. Run the storage provisioning preflight.",
+        requestId,
+      },
+      { status: 503 },
+    );
+  }
+
+  const path = `items/${id}/${Date.now()}-${crypto.randomUUID()}.webp`;
   const { error: uploadError } = await adminClient.storage
     .from(bucket)
-    .upload(path, bytes, { contentType: file.type, upsert: false });
+    .upload(path, normalizedImage, { contentType: "image/webp", upsert: false });
 
   if (uploadError) {
     console.error("[menu-image-upload] storage upload failed", {
