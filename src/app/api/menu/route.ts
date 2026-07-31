@@ -102,7 +102,10 @@ function readOptionalInteger(value: unknown, min: number, max: number, field: st
 }
 
 export async function POST(request: Request) {
-  const authResult = await requireAdminRouteContext();
+  const authResult = await requireAdminRouteContext({
+    request,
+    contentType: "json",
+  });
   if (!authResult.ok) return authResult.response;
 
   let payload: Record<string, unknown>;
