@@ -10,12 +10,17 @@ import { MenuView } from "@/components/dashboard/views/menu-view";
 import { OrdersView } from "@/components/dashboard/views/orders-view";
 import { TodayView } from "@/components/dashboard/views/today-view";
 import { ToastProvider, useToast } from "@/components/ui/toast";
-import { isActiveOrder, timeAgo } from "@/lib/dashboard/format";
+import { timeAgo } from "@/lib/dashboard/format";
+import {
+  DASHBOARD_NAV,
+  VIEW_TITLES,
+  isViewKey,
+  type ViewKey,
+} from "@/lib/dashboard/navigation";
+import { createDashboardReadModels } from "@/lib/dashboard/read-models";
 import type { DashboardSnapshot, MenuItem, Order } from "@/types/domain";
 
 type DataSourceKind = "mock" | "supabase";
-
-export type ViewKey = "today" | "orders" | "inventory" | "menu" | "customers" | "analytics";
 
 export interface MenuPayload {
   slug: string;
@@ -42,24 +47,6 @@ export interface OpsApi {
   saveMenuItem: (id: string, payload: MenuPayload) => Promise<boolean>;
   createMenuItem: (payload: MenuPayload) => Promise<string | null>;
 }
-
-const NAV: Array<{ key: ViewKey; label: string; short: string; icon: string; sub: string }> = [
-  { key: "today", label: "Today", short: "Today", icon: "🔥", sub: "What needs you right now — orders in motion, stock pressure, and the day's pulse." },
-  { key: "orders", label: "Orders", short: "Orders", icon: "🧾", sub: "Move tickets from new to picked up. Tap a card for the full order." },
-  { key: "inventory", label: "Inventory", short: "Stock", icon: "📦", sub: "Stock levels against par. Tap an ingredient to adjust counts in seconds." },
-  { key: "menu", label: "Menu", short: "Menu", icon: "🍽️", sub: "What customers see on the live site. Edit, pause, or add dishes — no code." },
-  { key: "customers", label: "Customers", short: "People", icon: "👥", sub: "Your regulars, VIPs, and everyone waiting on the next menu update." },
-  { key: "analytics", label: "Analytics", short: "Trends", icon: "📈", sub: "What's selling, who's coming back, and how fast orders move." },
-];
-
-const VIEW_TITLES: Record<ViewKey, string> = {
-  today: "Today",
-  orders: "Order Board",
-  inventory: "Inventory",
-  menu: "Menu Studio",
-  customers: "Customers",
-  analytics: "Analytics",
-};
 
 const EMPTY_SNAPSHOT: DashboardSnapshot = {
   generatedAt: new Date(0).toISOString(),
@@ -90,14 +77,15 @@ function DashboardInner({
   const router = useRouter();
   const toast = useToast();
   const snapshot = initialSnapshot ?? EMPTY_SNAPSHOT;
+  const readModels = useMemo(() => createDashboardReadModels(snapshot), [snapshot]);
 
   const [view, setView] = useState<ViewKey>("today");
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const syncHash = () => {
-      const raw = window.location.hash.replace("#", "") as ViewKey;
-      if (raw && NAV.some((item) => item.key === raw)) setView(raw);
+      const raw = window.location.hash.replace("#", "");
+      if (isViewKey(raw)) setView(raw);
     };
     syncHash();
     window.addEventListener("hashchange", syncHash);
@@ -168,20 +156,18 @@ function DashboardInner({
     [patchJson],
   );
 
-  /* -------- Derived -------- */
-
-  const activeOrders = useMemo(() => snapshot.orders.filter(isActiveOrder), [snapshot.orders]);
-  const lowStock = useMemo(
-    () => snapshot.inventory.filter((item) => item.status === "Low" || item.status === "Out"),
-    [snapshot.inventory],
-  );
+  /* -------- Shell state -------- */
 
   const badges: Partial<Record<ViewKey, { count: number; tone: "warning" | "danger" }>> = {};
-  if (activeOrders.length) badges.orders = { count: activeOrders.length, tone: "warning" };
-  if (lowStock.length) badges.inventory = { count: lowStock.length, tone: "danger" };
+  if (readModels.today.activeOrders.length) {
+    badges.orders = { count: readModels.today.activeOrders.length, tone: "warning" };
+  }
+  if (readModels.today.lowStock.length) {
+    badges.inventory = { count: readModels.today.lowStock.length, tone: "danger" };
+  }
 
   const syncedLabel = dataSource === "mock" ? "Demo data" : `Live · ${timeAgo(snapshot.generatedAt, now)}`;
-  const activeNav = NAV.find((item) => item.key === view) ?? NAV[0];
+  const activeNav = DASHBOARD_NAV.find((item) => item.key === view) ?? DASHBOARD_NAV[0];
 
   /* -------- Render -------- */
 
@@ -214,7 +200,7 @@ function DashboardInner({
         </div>
 
         <nav aria-label="Sections" className="nav">
-          {NAV.map((item) => {
+          {DASHBOARD_NAV.map((item) => {
             const badge = badges[item.key];
             return (
               <button
@@ -249,30 +235,38 @@ function DashboardInner({
         <header className="topbar">
           <div>
             <h1 className="topbar-title">{VIEW_TITLES[view]}</h1>
-            <p className="topbar-sub">{activeNav.sub}</p>
+            <p className="topbar-sub">{activeNav.description}</p>
           </div>
           <div className="topbar-side">
             <span className={`pill ${dataSource === "mock" ? "" : "success"}`}>{syncedLabel}</span>
-            <span className="pill warning">{snapshot.operations.serviceDateLabel}</span>
+            <span className="pill warning">{readModels.today.operations.serviceDateLabel}</span>
           </div>
         </header>
 
         <div className="view" key={view}>
-          {view === "today" && (
-            <TodayView api={api} goTo={goTo} lowStock={lowStock} now={now} snapshot={snapshot} />
+          {view === "today" && <TodayView api={api} goTo={goTo} model={readModels.today} now={now} />}
+          {view === "orders" && <OrdersView api={api} now={now} orders={readModels.orders.orders} />}
+          {view === "inventory" && <InventoryView api={api} inventory={readModels.inventory.inventory} />}
+          {view === "menu" && (
+            <MenuView api={api} inventory={readModels.menu.inventory} menu={readModels.menu.menu} />
           )}
-          {view === "orders" && <OrdersView api={api} now={now} orders={snapshot.orders} />}
-          {view === "inventory" && <InventoryView api={api} inventory={snapshot.inventory} />}
-          {view === "menu" && <MenuView api={api} inventory={snapshot.inventory} menu={snapshot.menu} />}
           {view === "customers" && (
-            <CustomersView customers={snapshot.customers} emailUpdates={snapshot.emailUpdates} />
+            <CustomersView
+              customers={readModels.customers.customers}
+              emailUpdates={readModels.customers.emailUpdates}
+            />
           )}
-          {view === "analytics" && <AnalyticsView customers={snapshot.customers} orders={snapshot.orders} />}
+          {view === "analytics" && (
+            <AnalyticsView
+              customers={readModels.analytics.customers}
+              orders={readModels.analytics.orders}
+            />
+          )}
         </div>
       </main>
 
       <nav aria-label="Sections" className="bottomnav">
-        {NAV.map((item) => {
+        {DASHBOARD_NAV.map((item) => {
           const badge = badges[item.key];
           return (
             <button
