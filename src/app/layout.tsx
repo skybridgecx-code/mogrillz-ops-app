@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+
 import "./globals.css";
+import "../styles/primitives.css";
+import "../styles/frontier-dashboard.css";
 
 export const metadata: Metadata = {
-  title: "Shama’s Kitchen Ops",
-  description: "Overview-first operator dashboard for Shama’s Kitchen inventory, orders, analytics, and AI guidance.",
+  title: "Shama’s Kitchen Frontier Ops",
+  description: "Exception-first operations workspace for Shama’s Kitchen orders, inventory, menu, customers, and reporting.",
 };
 
 export default function RootLayout({
