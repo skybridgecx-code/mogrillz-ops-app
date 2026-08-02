@@ -1,5 +1,6 @@
-import { cloneMockSnapshot } from "@/lib/mock-data";
+import { buildCanonicalKpis, withCanonicalMetrics } from "@/lib/dashboard/metrics";
 import { normalizeOrderStatus } from "@/lib/dashboard/order-status";
+import { cloneMockSnapshot } from "@/lib/mock-data";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
@@ -233,7 +234,7 @@ function mapOrder(row: Row): Order {
     customRequest: typeof row.custom_request === "string" ? row.custom_request : null,
     operatorNote: typeof row.operator_note === "string" ? row.operator_note : null,
     paymentProvider: readString(row.payment_provider, "Stripe"),
-    paymentStatus: readString(row.payment_status, "paid"),
+    paymentStatus: readString(row.payment_status, "unknown"),
     createdAt: readString(row.created_at, new Date().toISOString()),
     updatedAt: readString(row.updated_at, readString(row.created_at, new Date().toISOString())),
     items: nestedItems.map((item) => mapOrderItem(item as Row)),
@@ -417,41 +418,15 @@ function deriveOperationsSnapshot(orders: Order[]): DashboardSnapshot["operation
   };
 }
 
-function deriveKpis(orders: Order[], inventory: InventoryItem[]): DashboardSnapshot["kpis"] {
-  const pickupCount = orders.filter((order) => order.fulfillmentMethod === "pickup").length;
-  const totalRevenueCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
-  const lowStockCount = inventory.filter((item) => item.status === "Low" || item.status === "Out").length;
-  const healthyInventoryCount = inventory.filter((item) => item.status !== "Low" && item.status !== "Out").length;
-  const prepConfidence = inventory.length
-    ? Math.round((healthyInventoryCount / inventory.length) * 100)
-    : 100;
-
-  return [
-    {
-      label: "Today's Orders",
-      value: String(orders.length),
-      delta: `${pickupCount} next-day pickup`,
-      tone: "gold",
-    },
-    {
-      label: "Revenue To Date",
-      value: formatCompactCurrency(totalRevenueCents),
-      delta: `${orders.length} paid synced orders`,
-      tone: "green",
-    },
-    {
-      label: "Low Stock Items",
-      value: String(lowStockCount),
-      delta: lowStockCount ? "Needs attention before prep" : "All stocked for service",
-      tone: lowStockCount ? "red" : "green",
-    },
-    {
-      label: "Prep Confidence",
-      value: `${prepConfidence}%`,
-      delta: "Based on current inventory health",
-      tone: "blue",
-    },
-  ];
+function deriveKpis(
+  orders: Order[],
+  inventory: InventoryItem[],
+  now: Date | string | number = new Date(),
+): DashboardSnapshot["kpis"] {
+  return buildCanonicalKpis(orders, inventory, {
+    now,
+    formatCurrency: formatCompactCurrency,
+  });
 }
 
 async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
@@ -535,11 +510,12 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
       ? []
       : (dropRemindersResponse.data ?? []).map((row) => mapEmailUpdate(row as Row));
     const insights = (insightsResponse.data ?? []).map((row) => mapInsight(row as Row));
+    const generatedAt = new Date().toISOString();
 
     return {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       operations: deriveOperationsSnapshot(orders),
-      kpis: deriveKpis(orders, inventory),
+      kpis: deriveKpis(orders, inventory, generatedAt),
       orders,
       inventory,
       menu,
@@ -554,8 +530,13 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
 
 export async function loadDashboardDataState(): Promise<DashboardDataState> {
   if (shouldUseMockData()) {
+    const snapshot = cloneMockSnapshot();
+
     return {
-      snapshot: cloneMockSnapshot(),
+      snapshot: withCanonicalMetrics(snapshot, {
+        now: snapshot.generatedAt,
+        formatCurrency: formatCompactCurrency,
+      }),
       dataSource: "mock",
       dataIssue: null,
     };
@@ -602,5 +583,10 @@ export function getDataSourceKind(): DataSourceKind {
 }
 
 export function getMockDashboardSnapshot(): DashboardSnapshot {
-  return cloneMockSnapshot();
+  const snapshot = cloneMockSnapshot();
+
+  return withCanonicalMetrics(snapshot, {
+    now: snapshot.generatedAt,
+    formatCurrency: formatCompactCurrency,
+  });
 }
