@@ -234,7 +234,7 @@ function mapOrder(row: Row): Order {
     customRequest: typeof row.custom_request === "string" ? row.custom_request : null,
     operatorNote: typeof row.operator_note === "string" ? row.operator_note : null,
     paymentProvider: readString(row.payment_provider, "Stripe"),
-    paymentStatus: readString(row.payment_status, "paid"),
+    paymentStatus: readString(row.payment_status, "unknown"),
     createdAt: readString(row.created_at, new Date().toISOString()),
     updatedAt: readString(row.updated_at, readString(row.created_at, new Date().toISOString())),
     items: nestedItems.map((item) => mapOrderItem(item as Row)),
