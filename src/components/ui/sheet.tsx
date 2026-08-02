@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 
 export function Sheet({
   title,
@@ -13,6 +13,8 @@ export function Sheet({
   children: ReactNode;
   headerExtra?: ReactNode;
 }) {
+  const titleId = useId();
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -27,14 +29,14 @@ export function Sheet({
 
   return (
     <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <aside aria-label={title} className="sheet" role="dialog">
+      <div aria-hidden="true" className="sheet-backdrop" onClick={onClose} />
+      <aside aria-labelledby={titleId} aria-modal="true" className="sheet" role="dialog">
         <div className="sheet-head">
-          <h2 className="sheet-title">{title}</h2>
+          <h2 className="sheet-title" id={titleId}>{title}</h2>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             {headerExtra}
-            <button aria-label="Close" className="sheet-close" onClick={onClose} type="button">
-              ✕
+            <button aria-label="Close details" className="sheet-close" onClick={onClose} type="button">
+              ×
             </button>
           </div>
         </div>
