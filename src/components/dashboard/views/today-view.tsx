@@ -2,10 +2,11 @@
 
 import { useMemo } from "react";
 
-import type { OpsApi, ViewKey } from "@/components/dashboard/dashboard-app";
-import { formatCurrency, isActiveOrder, summarizeItems, timeAgo } from "@/lib/dashboard/format";
+import type { OpsApi } from "@/components/dashboard/dashboard-app";
+import { formatCurrency, summarizeItems, timeAgo } from "@/lib/dashboard/format";
+import type { ViewKey } from "@/lib/dashboard/navigation";
 import { getNextOrderStatus } from "@/lib/dashboard/order-status";
-import type { DashboardSnapshot, InventoryItem } from "@/types/domain";
+import type { TodayReadModel } from "@/lib/dashboard/read-models";
 
 interface AttentionItem {
   id: string;
@@ -25,22 +26,21 @@ function greeting() {
 }
 
 export function TodayView({
-  snapshot,
-  lowStock,
+  model,
   now,
   goTo,
   api,
 }: {
-  snapshot: DashboardSnapshot;
-  lowStock: InventoryItem[];
+  model: TodayReadModel;
   now: number;
   goTo: (view: ViewKey) => void;
   api: OpsApi;
 }) {
-  const newOrders = snapshot.orders.filter((order) => order.status === "New");
-  const readyOrders = snapshot.orders.filter((order) => order.status === "Ready");
-  const inPrepOrders = snapshot.orders.filter((order) => order.status === "In Prep");
-  const activeCount = snapshot.orders.filter(isActiveOrder).length;
+  const { activeOrders, insights, kpis, lowStock, operations, orders } = model;
+  const newOrders = orders.filter((order) => order.status === "New");
+  const readyOrders = orders.filter((order) => order.status === "Ready");
+  const inPrepOrders = orders.filter((order) => order.status === "In Prep");
+  const activeCount = activeOrders.length;
 
   const attention = useMemo<AttentionItem[]>(() => {
     const items: AttentionItem[] = [];
@@ -95,9 +95,7 @@ export function TodayView({
       });
     }
 
-    const specialRequests = snapshot.orders.filter(
-      (order) => isActiveOrder(order) && order.customRequest?.trim(),
-    );
+    const specialRequests = activeOrders.filter((order) => order.customRequest?.trim());
     if (specialRequests.length) {
       items.push({
         id: "special",
@@ -110,7 +108,7 @@ export function TodayView({
     }
 
     return items;
-  }, [newOrders, readyOrders, lowStock, snapshot.orders]);
+  }, [activeOrders, lowStock, newOrders, readyOrders]);
 
   const nextUp = newOrders[0] ?? inPrepOrders[0] ?? readyOrders[0] ?? null;
   const nextStatus = nextUp ? getNextOrderStatus(nextUp.status) : null;
@@ -121,12 +119,12 @@ export function TodayView({
         <h2 className="hero-greeting">{greeting()} 🔥</h2>
         <p className="hero-copy">
           {activeCount
-            ? `${activeCount} active order${activeCount > 1 ? "s" : ""} in the queue · ${snapshot.operations.queueSummary}`
+            ? `${activeCount} active order${activeCount > 1 ? "s" : ""} in the queue · ${operations.queueSummary}`
             : "The queue is clear. Prep ahead, update the menu, or check what's been selling."}
         </p>
 
         <div className="kpi-row" style={{ marginBottom: 0 }}>
-          {snapshot.kpis.map((kpi) => (
+          {kpis.map((kpi) => (
             <div className={`kpi ${kpi.tone}`} key={kpi.label}>
               <div className="kpi-label">{kpi.label}</div>
               <div className="kpi-value">{kpi.value}</div>
@@ -221,18 +219,18 @@ export function TodayView({
             </div>
           </section>
 
-          {snapshot.insights.length ? (
+          {insights.length ? (
             <section className="card">
               <div className="card-head">
                 <div>
                   <p className="kicker">Insight</p>
-                  <h3 className="card-title">{snapshot.insights[0].title}</h3>
+                  <h3 className="card-title">{insights[0].title}</h3>
                 </div>
-                <span className="pill info">{snapshot.insights[0].confidence}%</span>
+                <span className="pill info">{insights[0].confidence}%</span>
               </div>
-              <p className="muted" style={{ margin: 0 }}>{snapshot.insights[0].summary}</p>
+              <p className="muted" style={{ margin: 0 }}>{insights[0].summary}</p>
               <div className="callout" style={{ marginTop: "0.75rem" }}>
-                💡 {snapshot.insights[0].actionText}
+                💡 {insights[0].actionText}
               </div>
             </section>
           ) : null}
