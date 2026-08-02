@@ -4,57 +4,50 @@ export interface DashboardNavItem {
   key: ViewKey;
   label: string;
   short: string;
-  icon: string;
   description: string;
 }
 
 export const DASHBOARD_NAV: readonly DashboardNavItem[] = [
   {
     key: "today",
-    label: "Today",
-    short: "Today",
-    icon: "🔥",
-    description: "What needs you right now — orders in motion, stock pressure, and the day's pulse.",
+    label: "Command Center",
+    short: "Command",
+    description: "Prioritized orders, inventory pressure, and the operating picture for the current service day.",
   },
   {
     key: "orders",
     label: "Orders",
     short: "Orders",
-    icon: "🧾",
-    description: "Move tickets from new to picked up. Tap a card for the full order.",
+    description: "Move tickets through the kitchen workflow and inspect each customer request.",
   },
   {
     key: "inventory",
     label: "Inventory",
     short: "Stock",
-    icon: "📦",
-    description: "Stock levels against par. Tap an ingredient to adjust counts in seconds.",
+    description: "Review stock against par and update ingredient counts before service.",
   },
   {
     key: "menu",
     label: "Menu",
     short: "Menu",
-    icon: "🍽️",
-    description: "What customers see on the live site. Edit, pause, or add dishes — no code.",
+    description: "Manage the dishes and availability shown on the public ordering site.",
   },
   {
     key: "customers",
     label: "Customers",
     short: "People",
-    icon: "👥",
-    description: "Your regulars, VIPs, and everyone waiting on the next menu update.",
+    description: "Review regulars, VIPs, and subscribers waiting for the next update.",
   },
   {
     key: "analytics",
     label: "Analytics",
     short: "Trends",
-    icon: "📈",
-    description: "What's selling, who's coming back, and how fast orders move.",
+    description: "Understand sales, customer retention, and order-flow performance.",
   },
 ] as const;
 
 export const VIEW_TITLES: Record<ViewKey, string> = {
-  today: "Today",
+  today: "Command Center",
   orders: "Order Board",
   inventory: "Inventory",
   menu: "Menu Studio",
