@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { FrontierNavIcon } from "@/components/dashboard/frontier-nav-icon";
 import { AnalyticsView } from "@/components/dashboard/views/analytics-view";
 import { CustomersView } from "@/components/dashboard/views/customers-view";
 import { InventoryView } from "@/components/dashboard/views/inventory-view";
 import { MenuView } from "@/components/dashboard/views/menu-view";
 import { OrdersView } from "@/components/dashboard/views/orders-view";
 import { TodayView } from "@/components/dashboard/views/today-view";
+import { Panel } from "@/components/foundation/Panel";
+import { SectionHeader } from "@/components/foundation/SectionHeader";
+import { StatusBadge } from "@/components/foundation/StatusBadge";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { timeAgo } from "@/lib/dashboard/format";
 import {
@@ -113,8 +117,6 @@ function DashboardInner({
     }
   }, []);
 
-  /* -------- Mutations -------- */
-
   const patchJson = useCallback(
     async (url: string, method: string, body: unknown, successMessage: string) => {
       try {
@@ -156,8 +158,6 @@ function DashboardInner({
     [patchJson],
   );
 
-  /* -------- Shell state -------- */
-
   const badges: Partial<Record<ViewKey, { count: number; tone: "warning" | "danger" }>> = {};
   if (readModels.today.activeOrders.length) {
     badges.orders = { count: readModels.today.activeOrders.length, tone: "warning" };
@@ -169,115 +169,122 @@ function DashboardInner({
   const syncedLabel = dataSource === "mock" ? "Demo data" : `Live · ${timeAgo(snapshot.generatedAt, now)}`;
   const activeNav = DASHBOARD_NAV.find((item) => item.key === view) ?? DASHBOARD_NAV[0];
 
-  /* -------- Render -------- */
-
   if (dataIssue && !initialSnapshot) {
     return (
-      <div className="app">
-        <main className="main" style={{ gridColumn: "1 / -1", maxWidth: 560, margin: "8vh auto" }}>
-          <div className="card">
-            <p className="kicker">Connection issue</p>
-            <h1 className="card-title" style={{ fontSize: "1.3rem" }}>Live data is unavailable</h1>
-            <p className="muted" style={{ margin: "0.6rem 0 1rem" }}>{dataIssue}</p>
-            <button className="btn btn-primary" onClick={() => router.refresh()} type="button">
-              Retry
-            </button>
-          </div>
-        </main>
+      <div className="app-shell frontier-connection">
+        <Panel className="frontier-connection__panel">
+          <SectionHeader
+            description={dataIssue}
+            eyebrow="Connection issue"
+            headingLevel="h1"
+            title="Live operations data is unavailable"
+          />
+          <button className="frontier-primary-button" onClick={() => router.refresh()} style={{ marginTop: "1.5rem" }} type="button">
+            Retry connection
+          </button>
+        </Panel>
       </div>
     );
   }
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-flame">🔥</div>
-          <div className="brand-name">
-            SHAMA&rsquo;S <em>KITCHEN</em>
+    <div className="app-shell frontier-shell">
+      <aside className="frontier-sidebar">
+        <div className="frontier-brand">
+          <div aria-hidden="true" className="frontier-brand__mark">SK</div>
+          <div className="frontier-brand__copy">
+            <p className="frontier-brand__name">Shama&rsquo;s Kitchen</p>
+            <p className="frontier-brand__product">Frontier Ops</p>
           </div>
-          <div className="brand-sub">Ops Console</div>
         </div>
 
-        <nav aria-label="Sections" className="nav">
+        <nav aria-label="Operations sections" className="frontier-nav">
           {DASHBOARD_NAV.map((item) => {
             const badge = badges[item.key];
+            const isActive = view === item.key;
             return (
               <button
-                className={`nav-item ${view === item.key ? "active" : ""}`}
+                aria-current={isActive ? "page" : undefined}
+                className="frontier-nav__item"
                 key={item.key}
                 onClick={() => goTo(item.key)}
+                title={item.label}
                 type="button"
               >
-                <span aria-hidden className="nav-icon">{item.icon}</span>
-                <span className="nav-label">{item.label}</span>
-                {badge ? <span className={`nav-dot ${badge.tone}`}>{badge.count}</span> : null}
+                <span className="frontier-nav__icon"><FrontierNavIcon view={item.key} /></span>
+                <span className="frontier-nav__label">{item.label}</span>
+                {badge ? (
+                  <span className="frontier-nav__badge" data-tone={badge.tone}>{badge.count}</span>
+                ) : null}
               </button>
             );
           })}
         </nav>
 
-        <div className="sidebar-foot">
-          <div className="live-row">
-            <span className={`live-dot ${dataSource === "mock" ? "muted" : ""}`} />
-            {syncedLabel}
+        <div className="frontier-sidebar__footer">
+          <div className="frontier-sync">
+            <span className="frontier-sync__dot" data-source={dataSource} />
+            <span>{syncedLabel}</span>
           </div>
-          <a href="https://mogrillzva.vercel.app" rel="noreferrer" target="_blank">
-            View public site ↗
-          </a>
-          <a href="https://mogrillzva.vercel.app/social-agent.html" rel="noreferrer" target="_blank">
-            Social agent ↗
-          </a>
+          <div className="frontier-sidebar__links">
+            <a href="https://mogrillzva.vercel.app" rel="noreferrer" target="_blank">Open public site</a>
+            <a href="https://mogrillzva.vercel.app/social-agent.html" rel="noreferrer" target="_blank">Open social agent</a>
+          </div>
         </div>
       </aside>
 
-      <main className="main">
-        <header className="topbar">
+      <main className="frontier-main">
+        <header className="frontier-topbar">
           <div>
-            <h1 className="topbar-title">{VIEW_TITLES[view]}</h1>
-            <p className="topbar-sub">{activeNav.description}</p>
+            <p className="frontier-topbar__eyebrow">Frontier Ops</p>
+            <h1 className="frontier-topbar__title">{VIEW_TITLES[view]}</h1>
+            <p className="frontier-topbar__description">{activeNav.description}</p>
           </div>
-          <div className="topbar-side">
-            <span className={`pill ${dataSource === "mock" ? "" : "success"}`}>{syncedLabel}</span>
-            <span className="pill warning">{readModels.today.operations.serviceDateLabel}</span>
+          <div className="frontier-topbar__status">
+            <StatusBadge status={dataSource === "mock" ? "neutral" : "ready"}>{syncedLabel}</StatusBadge>
+            <StatusBadge status="review">{readModels.today.operations.serviceDateLabel}</StatusBadge>
           </div>
         </header>
 
-        <div className="view" key={view}>
-          {view === "today" && <TodayView api={api} goTo={goTo} model={readModels.today} now={now} />}
-          {view === "orders" && <OrdersView api={api} now={now} orders={readModels.orders.orders} />}
-          {view === "inventory" && <InventoryView api={api} inventory={readModels.inventory.inventory} />}
-          {view === "menu" && (
-            <MenuView api={api} inventory={readModels.menu.inventory} menu={readModels.menu.menu} />
-          )}
-          {view === "customers" && (
-            <CustomersView
-              customers={readModels.customers.customers}
-              emailUpdates={readModels.customers.emailUpdates}
-            />
-          )}
-          {view === "analytics" && (
-            <AnalyticsView
-              customers={readModels.analytics.customers}
-              orders={readModels.analytics.orders}
-            />
-          )}
+        <div className="frontier-content">
+          <div className={`frontier-view frontier-view--${view}`} key={view}>
+            {view === "today" && <TodayView api={api} goTo={goTo} model={readModels.today} now={now} />}
+            {view === "orders" && <OrdersView api={api} now={now} orders={readModels.orders.orders} />}
+            {view === "inventory" && <InventoryView api={api} inventory={readModels.inventory.inventory} />}
+            {view === "menu" && (
+              <MenuView api={api} inventory={readModels.menu.inventory} menu={readModels.menu.menu} />
+            )}
+            {view === "customers" && (
+              <CustomersView
+                customers={readModels.customers.customers}
+                emailUpdates={readModels.customers.emailUpdates}
+              />
+            )}
+            {view === "analytics" && (
+              <AnalyticsView
+                customers={readModels.analytics.customers}
+                orders={readModels.analytics.orders}
+              />
+            )}
+          </div>
         </div>
       </main>
 
-      <nav aria-label="Sections" className="bottomnav">
+      <nav aria-label="Operations sections" className="frontier-bottom-nav">
         {DASHBOARD_NAV.map((item) => {
           const badge = badges[item.key];
+          const isActive = view === item.key;
           return (
             <button
-              className={`bnav-item ${view === item.key ? "active" : ""}`}
+              aria-current={isActive ? "page" : undefined}
+              className="frontier-bottom-nav__item"
               key={item.key}
               onClick={() => goTo(item.key)}
               type="button"
             >
-              <span aria-hidden className="bnav-icon">{item.icon}</span>
-              {item.short}
-              {badge ? <span className="bnav-badge">{badge.count}</span> : null}
+              <FrontierNavIcon height={18} view={item.key} width={18} />
+              <span>{item.short}</span>
+              {badge ? <span className="frontier-bottom-nav__badge">{badge.count}</span> : null}
             </button>
           );
         })}
