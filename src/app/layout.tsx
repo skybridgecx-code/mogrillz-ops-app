@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "../styles/primitives.css";
 import "../styles/frontier-dashboard.css";
+import "../styles/frontier-orders.css";
 
 export const metadata: Metadata = {
   title: "Shama’s Kitchen Frontier Ops",
