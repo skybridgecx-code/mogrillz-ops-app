@@ -65,4 +65,4 @@ jobs:
           PGDATABASE: mogrillz_contract
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: psql --set ON_ERROR_STOP=1 --file tests/sql/order-lifecycle-contract.sql
+        run: psql --set ON_ERROR_STOP=1 --file tests/sql/order-lifecycle-acl-contract.sql
