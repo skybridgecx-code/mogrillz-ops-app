@@ -171,7 +171,7 @@
 
 .inventory-workspace__filter:focus-visible,
 .inventory-workspace__search input:focus-visible,
-.inventory-stock__update,
+.inventory-stock__update:focus-visible,
 .inventory-editor button:focus-visible,
 .inventory-editor input:focus-visible,
 .inventory-editor textarea:focus-visible {

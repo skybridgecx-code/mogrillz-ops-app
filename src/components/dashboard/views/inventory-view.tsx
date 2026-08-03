@@ -334,6 +334,11 @@ export function InventoryView({ inventory, api }: { inventory: InventoryItem[]; 
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
       if (
+        openId !== null ||
+        event.defaultPrevented ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
         event.key !== "/" ||
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
@@ -349,7 +354,7 @@ export function InventoryView({ inventory, api }: { inventory: InventoryItem[]; 
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [openId]);
 
   useEffect(() => {
     if (openItem) return;
