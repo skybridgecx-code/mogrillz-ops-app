@@ -1,29 +1,14 @@
 import { NextResponse } from "next/server";
 
+import {
+  isMissingOptionalMenuMacroColumn,
+  stripOptionalMenuMacroColumns,
+} from "@/lib/menu/menu-write-compat";
 import { userHasAdminMembership } from "@/lib/supabase/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
-const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
-const OPTIONAL_MENU_COLUMNS = [...MACRO_COLUMNS, "is_active"] as const;
-
-function isMissingOptionalMenuColumn(error: { message?: string; code?: string } | null | undefined) {
-  const message = error?.message?.toLowerCase() ?? "";
-  return (
-    error?.code === "42703" ||
-    error?.code === "PGRST204" ||
-    OPTIONAL_MENU_COLUMNS.some((column) => message.includes(column))
-  );
-}
-
-function stripOptionalMenuColumns<T extends Record<string, unknown>>(payload: T) {
-  const next = { ...payload };
-  for (const column of OPTIONAL_MENU_COLUMNS) {
-    delete next[column];
-  }
-  return next;
-}
 
 function slugify(value: string) {
   return value
@@ -162,9 +147,7 @@ export async function POST(request: Request) {
     const name = readText(payload.name, 120, "Name");
     slug = slugify(typeof payload.slug === "string" ? payload.slug : name);
 
-    if (!slug) {
-      throw new Error("Slug is required.");
-    }
+    if (!slug) throw new Error("Slug is required.");
 
     const availability = readAvailability(payload.availability);
     const insertPayload: Record<string, unknown> = {
@@ -182,8 +165,6 @@ export async function POST(request: Request) {
       notes: readOptionalText(payload.notes, 400),
     };
 
-    // Macros are optional and only written when provided, so item creation
-    // keeps working before the meal-prep migration has been applied.
     const calories = readOptionalInteger(payload.calories, 0, 5000, "Calories");
     const proteinG = readOptionalInteger(payload.proteinG, 0, 500, "Protein");
     const carbsG = readOptionalInteger(payload.carbsG, 0, 500, "Carbs");
@@ -202,10 +183,10 @@ export async function POST(request: Request) {
       .select("*")
       .single();
 
-    if (createResult.error && isMissingOptionalMenuColumn(createResult.error)) {
+    if (createResult.error && isMissingOptionalMenuMacroColumn(createResult.error)) {
       createResult = await authResult.adminClient
         .from("menu_items")
-        .insert(stripOptionalMenuColumns(insertPayload))
+        .insert(stripOptionalMenuMacroColumns(insertPayload))
         .select("*")
         .single();
     }
