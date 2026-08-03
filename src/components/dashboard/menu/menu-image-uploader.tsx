@@ -165,6 +165,7 @@ export function MenuImageUploader({ itemId, itemName, currentImageUrl, onUploade
 
       <input
         accept="image/jpeg,image/png,image/webp,image/avif"
+        aria-label={`Choose image file for ${itemName}`}
         className="menu-image-input"
         onChange={handleFileChange}
         ref={inputRef}
