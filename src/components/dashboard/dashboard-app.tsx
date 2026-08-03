@@ -66,6 +66,12 @@ const EMPTY_SNAPSHOT: DashboardSnapshot = {
   menu: [],
   customers: [],
   emailUpdates: [],
+  optionalSources: {
+    subscribers: { status: "unavailable", issue: "Dashboard data unavailable." },
+    activity: { status: "unavailable", issue: "Dashboard data unavailable." },
+  },
+  activity: [],
+  activityScope: "order-status-events-only",
   insights: [],
 };
 
@@ -256,8 +262,12 @@ function DashboardInner({
             )}
             {view === "customers" && (
               <CustomersView
+                activity={readModels.customers.activity}
+                activityScope={readModels.customers.activityScope}
                 customers={readModels.customers.customers}
                 emailUpdates={readModels.customers.emailUpdates}
+                orders={readModels.orders.orders}
+                optionalSources={readModels.customers.optionalSources}
               />
             )}
             {view === "analytics" && (

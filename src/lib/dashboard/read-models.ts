@@ -7,6 +7,7 @@ import type {
   InventoryItem,
   MenuItem,
   Order,
+  OrderStatusEvent,
 } from "@/types/domain";
 
 export interface TodayReadModel {
@@ -34,6 +35,9 @@ export interface MenuReadModel {
 export interface CustomersReadModel {
   customers: Customer[];
   emailUpdates: EmailUpdate[];
+  activity: OrderStatusEvent[];
+  optionalSources: DashboardSnapshot["optionalSources"];
+  activityScope: DashboardSnapshot["activityScope"];
 }
 
 export interface AnalyticsReadModel {
@@ -78,6 +82,9 @@ export function createDashboardReadModels(snapshot: DashboardSnapshot): Dashboar
     customers: {
       customers: snapshot.customers,
       emailUpdates: snapshot.emailUpdates,
+      activity: snapshot.activity,
+      optionalSources: snapshot.optionalSources,
+      activityScope: snapshot.activityScope,
     },
     analytics: {
       customers: snapshot.customers,

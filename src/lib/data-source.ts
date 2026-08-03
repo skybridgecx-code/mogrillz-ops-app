@@ -1,5 +1,6 @@
 import { buildCanonicalKpis, withCanonicalMetrics } from "@/lib/dashboard/metrics";
 import { normalizeOrderStatus } from "@/lib/dashboard/order-status";
+import { normalizeLoyaltyTier } from "@/lib/dashboard/customer-activity-workspace";
 import { cloneMockSnapshot } from "@/lib/mock-data";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -13,6 +14,7 @@ import type {
   MenuItem,
   Order,
   OrderItem,
+  OrderStatusEvent,
 } from "@/types/domain";
 
 export type DataSourceKind = "mock" | "supabase";
@@ -222,6 +224,7 @@ function mapOrder(row: Row): Order {
   return {
     id,
     orderNumber: readString(row.order_number, id),
+    customerId: readNullableString(row.customer_id),
     customerName: readString(row.customer_name, "Unknown Customer"),
     customerEmail: typeof row.customer_email === "string" ? row.customer_email : null,
     customerZone: readString(row.zone, "Northern Virginia"),
@@ -283,7 +286,6 @@ function mapMenuItem(row: Row, resolvedImageUrl: string | null = readNullableStr
 }
 
 function mapCustomer(row: Row): Customer {
-  const loyalty = capitalizeWords(readString(row.loyalty_tier), "Early");
   return {
     id: readString(row.id, crypto.randomUUID()),
     name: readString(row.name, "Unknown Customer"),
@@ -291,9 +293,31 @@ function mapCustomer(row: Row): Customer {
     zone: readString(row.zone, "Northern Virginia"),
     totalOrders: readNumber(row.total_orders, 0),
     lifetimeValueCents: readNumber(row.lifetime_value_cents, 0),
-    loyaltyTier: (loyalty === "New" ? "Early" : loyalty) as Customer["loyaltyTier"],
+    loyaltyTier: normalizeLoyaltyTier(row.loyalty_tier),
     notes: typeof row.notes === "string" ? row.notes : null,
-    lastOrderAt: readString(row.updated_at, new Date().toISOString()),
+    lastOrderAt: readNullableString(row.last_order_at),
+  };
+}
+
+function mapOrderStatusEvent(row: Row): OrderStatusEvent | null {
+  const id = readNullableString(row.id);
+  const orderId = readNullableString(row.order_id);
+  const fromStatus = normalizeOrderStatus(row.from_status);
+  const toStatus = normalizeOrderStatus(row.to_status);
+  const changedAt = readNullableString(row.changed_at);
+  const orderVersion = readNumber(row.order_version, Number.NaN);
+
+  if (!id || !orderId || !fromStatus || !toStatus || !changedAt || !Number.isFinite(orderVersion)) return null;
+  if (!Number.isFinite(Date.parse(changedAt))) return null;
+
+  return {
+    id,
+    orderId,
+    fromStatus,
+    toStatus,
+    orderVersion,
+    changedBy: readNullableString(row.changed_by),
+    changedAt,
   };
 }
 
@@ -443,6 +467,7 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
       insightsResponse,
       inventoryLinksResponse,
       dropRemindersResponse,
+      activityResponse,
     ] =
       await Promise.all([
         client.from("orders").select("*, order_items(*)"),
@@ -452,6 +477,7 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
         client.from("insights").select("*"),
         client.from("inventory_item_menu_links").select("inventory_item_id,menu_item_id"),
         client.from("drop_reminders").select("*"),
+        client.from("order_status_events").select("*"),
       ]);
 
     if (
@@ -509,6 +535,11 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
     const emailUpdates = dropRemindersResponse.error
       ? []
       : (dropRemindersResponse.data ?? []).map((row) => mapEmailUpdate(row as Row));
+    const activity = activityResponse.error
+      ? []
+      : (activityResponse.data ?? [])
+        .map((row) => mapOrderStatusEvent(row as Row))
+        .filter((event): event is OrderStatusEvent => Boolean(event));
     const insights = (insightsResponse.data ?? []).map((row) => mapInsight(row as Row));
     const generatedAt = new Date().toISOString();
 
@@ -521,6 +552,18 @@ async function tryRemoteSnapshot(): Promise<DashboardSnapshot | null> {
       menu,
       customers,
       emailUpdates,
+      optionalSources: {
+        subscribers: {
+          status: dropRemindersResponse.error ? "unavailable" : "loaded",
+          issue: dropRemindersResponse.error?.message ?? null,
+        },
+        activity: {
+          status: activityResponse.error ? "unavailable" : "loaded",
+          issue: activityResponse.error?.message ?? null,
+        },
+      },
+      activity,
+      activityScope: "order-status-events-only",
       insights,
     };
   } catch {
