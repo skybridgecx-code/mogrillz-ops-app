@@ -40,9 +40,9 @@ export const DASHBOARD_NAV: readonly DashboardNavItem[] = [
   },
   {
     key: "analytics",
-    label: "Analytics",
-    short: "Trends",
-    description: "Understand sales, customer retention, and order-flow performance.",
+    label: "Reports",
+    short: "Reports",
+    description: "Review recognized sales, service operations, exact-ID customers, and item performance for the loaded snapshot.",
   },
 ] as const;
 
@@ -52,7 +52,7 @@ export const VIEW_TITLES: Record<ViewKey, string> = {
   inventory: "Inventory",
   menu: "Menu Studio",
   customers: "Customers & Activity",
-  analytics: "Analytics",
+  analytics: "Reports",
 };
 
 const VIEW_KEYS = new Set<ViewKey>(DASHBOARD_NAV.map((item) => item.key));

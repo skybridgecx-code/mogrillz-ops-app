@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { FrontierNavIcon } from "@/components/dashboard/frontier-nav-icon";
-import { AnalyticsView } from "@/components/dashboard/views/analytics-view";
+import { ReportsView } from "@/components/dashboard/views/analytics-view";
 import { CustomersView } from "@/components/dashboard/views/customers-view";
 import { InventoryView } from "@/components/dashboard/views/inventory-view";
 import { MenuView } from "@/components/dashboard/views/menu-view";
@@ -271,9 +271,10 @@ function DashboardInner({
               />
             )}
             {view === "analytics" && (
-              <AnalyticsView
-                customers={readModels.analytics.customers}
-                orders={readModels.analytics.orders}
+              <ReportsView
+                customers={readModels.reports.customers}
+                generatedAt={readModels.reports.generatedAt}
+                orders={readModels.reports.orders}
               />
             )}
           </div>

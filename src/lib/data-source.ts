@@ -240,6 +240,10 @@ function mapOrder(row: Row): Order {
     paymentStatus: readString(row.payment_status, "unknown"),
     createdAt: readString(row.created_at, new Date().toISOString()),
     updatedAt: readString(row.updated_at, readString(row.created_at, new Date().toISOString())),
+    prepStartedAt: readNullableString(row.prep_started_at),
+    readyAt: readNullableString(row.ready_at),
+    pickedUpAt: readNullableString(row.picked_up_at),
+    cancelledAt: readNullableString(row.cancelled_at),
     items: nestedItems.map((item) => mapOrderItem(item as Row)),
   };
 }

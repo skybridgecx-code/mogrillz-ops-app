@@ -40,7 +40,8 @@ export interface CustomersReadModel {
   activityScope: DashboardSnapshot["activityScope"];
 }
 
-export interface AnalyticsReadModel {
+export interface ReportsReadModel {
+  generatedAt: string;
   customers: Customer[];
   orders: Order[];
 }
@@ -51,7 +52,7 @@ export interface DashboardReadModels {
   inventory: InventoryReadModel;
   menu: MenuReadModel;
   customers: CustomersReadModel;
-  analytics: AnalyticsReadModel;
+  reports: ReportsReadModel;
 }
 
 export function createDashboardReadModels(snapshot: DashboardSnapshot): DashboardReadModels {
@@ -86,7 +87,8 @@ export function createDashboardReadModels(snapshot: DashboardSnapshot): Dashboar
       optionalSources: snapshot.optionalSources,
       activityScope: snapshot.activityScope,
     },
-    analytics: {
+    reports: {
+      generatedAt: snapshot.generatedAt,
       customers: snapshot.customers,
       orders: snapshot.orders,
     },
