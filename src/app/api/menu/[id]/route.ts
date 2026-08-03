@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 
+import {
+  isMissingOptionalMenuMacroColumn,
+  stripOptionalMenuMacroColumns,
+} from "@/lib/menu/menu-write-compat";
 import { userHasAdminMembership } from "@/lib/supabase/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
-const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
-const OPTIONAL_MENU_COLUMNS = [...MACRO_COLUMNS, "is_active"] as const;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -48,23 +50,6 @@ function readOptionalInteger(value: unknown, min: number, max: number, field: st
   return Math.round(parsed);
 }
 
-function isMissingOptionalMenuColumn(error: { message?: string; code?: string } | null | undefined) {
-  const message = error?.message?.toLowerCase() ?? "";
-  return (
-    error?.code === "42703" ||
-    error?.code === "PGRST204" ||
-    OPTIONAL_MENU_COLUMNS.some((column) => message.includes(column))
-  );
-}
-
-function stripOptionalMenuColumns(payload: MenuPayload) {
-  const next = { ...payload };
-  for (const column of OPTIONAL_MENU_COLUMNS) {
-    delete next[column];
-  }
-  return next;
-}
-
 function slugify(value: string) {
   return value
     .trim()
@@ -75,14 +60,10 @@ function slugify(value: string) {
 }
 
 function readText(value: unknown, maxLength: number, field: string) {
-  if (typeof value !== "string") {
-    throw new Error(`${field} is required.`);
-  }
+  if (typeof value !== "string") throw new Error(`${field} is required.`);
 
   const normalized = value.trim();
-  if (!normalized) {
-    throw new Error(`${field} is required.`);
-  }
+  if (!normalized) throw new Error(`${field} is required.`);
   if (normalized.length > maxLength) {
     throw new Error(`${field} must be ${maxLength} characters or fewer.`);
   }
@@ -92,9 +73,7 @@ function readText(value: unknown, maxLength: number, field: string) {
 
 function readOptionalText(value: unknown, maxLength: number) {
   if (value == null) return null;
-  if (typeof value !== "string") {
-    throw new Error("Optional text fields must be strings.");
-  }
+  if (typeof value !== "string") throw new Error("Optional text fields must be strings.");
 
   const normalized = value.trim();
   if (!normalized) return null;
@@ -106,9 +85,7 @@ function readOptionalText(value: unknown, maxLength: number) {
 }
 
 function readAvailability(value: unknown) {
-  if (typeof value !== "string") {
-    throw new Error("Availability is required.");
-  }
+  if (typeof value !== "string") throw new Error("Availability is required.");
 
   const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
   const legacyMap: Record<string, (typeof MENU_AVAILABILITY_VALUES)[number]> = {
@@ -133,9 +110,7 @@ function readAvailability(value: unknown) {
   const match = MENU_AVAILABILITY_VALUES.find(
     (option) => option.toLowerCase() === normalized,
   );
-  if (!match) {
-    throw new Error("Availability is invalid.");
-  }
+  if (!match) throw new Error("Availability is invalid.");
 
   return match.toLowerCase();
 }
@@ -156,10 +131,7 @@ function readInteger(value: unknown, min: number, max: number, field: string) {
 }
 
 function readBoolean(value: unknown, field: string) {
-  if (typeof value !== "boolean") {
-    throw new Error(`${field} must be true or false.`);
-  }
-
+  if (typeof value !== "boolean") throw new Error(`${field} must be true or false.`);
   return value;
 }
 
@@ -169,9 +141,7 @@ function readMenuPayload(body: unknown): MenuPayload {
   const slugInput = typeof data.slug === "string" ? data.slug : name;
   const slug = slugify(slugInput);
 
-  if (!slug) {
-    throw new Error("Slug is required.");
-  }
+  if (!slug) throw new Error("Slug is required.");
 
   const availability = readAvailability(data.availability);
   const payload: MenuPayload = {
@@ -288,10 +258,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     .select("*")
     .single();
 
-  if (updateResult.error && isMissingOptionalMenuColumn(updateResult.error)) {
+  if (updateResult.error && isMissingOptionalMenuMacroColumn(updateResult.error)) {
     updateResult = await authResult.adminClient
       .from("menu_items")
-      .update(stripOptionalMenuColumns(payload))
+      .update(stripOptionalMenuMacroColumns(payload))
       .eq("id", resolvedMenuId)
       .select("*")
       .single();
