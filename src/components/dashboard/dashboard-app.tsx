@@ -38,10 +38,10 @@ export interface MenuPayload {
   sortOrder: number;
   isFeatured: boolean;
   notes: string;
-  calories: number | null;
-  proteinG: number | null;
-  carbsG: number | null;
-  fatG: number | null;
+  calories?: number | null;
+  proteinG?: number | null;
+  carbsG?: number | null;
+  fatG?: number | null;
 }
 
 export interface OpsApi {
@@ -149,9 +149,9 @@ function DashboardInner({
       saveInventory: async (id, input) =>
         Boolean(await patchJson(`/api/inventory/${id}`, "PATCH", input, "Stock updated")),
       saveMenuItem: async (id, payload) =>
-        Boolean(await patchJson(`/api/menu/${id}`, "PATCH", payload, "Menu item saved — live on your site")),
+        Boolean(await patchJson(`/api/menu/${id}`, "PATCH", payload, "Menu item saved")),
       createMenuItem: async (payload) => {
-        const result = await patchJson("/api/menu", "POST", payload, "New dish added to the live menu");
+        const result = await patchJson("/api/menu", "POST", payload, "Menu item created");
         return result?.id ?? null;
       },
     }),
