@@ -127,7 +127,14 @@ test("combines status filters with search and excludes cancelled orders", () => 
   const orders = [
     order({ id: "new-fatima", status: "New" }),
     order({ id: "ready-fatima", status: "Ready" }),
-    order({ id: "ready-hamza", status: "Ready", customerName: "Hamza Ali" }),
+    order({
+      id: "ready-hamza",
+      status: "Ready",
+      customerName: "Hamza Ali",
+      customerEmail: "hamza@example.com",
+      customRequest: null,
+      operatorNote: null,
+    }),
     order({ id: "cancelled-fatima", status: "Cancelled" }),
   ];
 
