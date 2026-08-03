@@ -25,7 +25,7 @@ type MenuPayload = {
   image_url: string | null;
   sort_order: number;
   is_featured: boolean;
-  is_active?: boolean;
+  is_active: boolean;
   notes: string | null;
   calories?: number | null;
   protein_g?: number | null;
@@ -64,9 +64,7 @@ function readText(value: unknown, maxLength: number, field: string) {
 
   const normalized = value.trim();
   if (!normalized) throw new Error(`${field} is required.`);
-  if (normalized.length > maxLength) {
-    throw new Error(`${field} must be ${maxLength} characters or fewer.`);
-  }
+  if (normalized.length > maxLength) throw new Error(`${field} must be ${maxLength} characters or fewer.`);
 
   return normalized;
 }
@@ -77,9 +75,7 @@ function readOptionalText(value: unknown, maxLength: number) {
 
   const normalized = value.trim();
   if (!normalized) return null;
-  if (normalized.length > maxLength) {
-    throw new Error(`Optional text fields must be ${maxLength} characters or fewer.`);
-  }
+  if (normalized.length > maxLength) throw new Error(`Optional text fields must be ${maxLength} characters or fewer.`);
 
   return normalized;
 }
@@ -107,9 +103,7 @@ function readAvailability(value: unknown) {
   const legacyMatch = legacyMap[normalized];
   if (legacyMatch) return legacyMatch.toLowerCase();
 
-  const match = MENU_AVAILABILITY_VALUES.find(
-    (option) => option.toLowerCase() === normalized,
-  );
+  const match = MENU_AVAILABILITY_VALUES.find((option) => option.toLowerCase() === normalized);
   if (!match) throw new Error("Availability is invalid.");
 
   return match.toLowerCase();
@@ -159,19 +153,15 @@ function readMenuPayload(body: unknown): MenuPayload {
     notes: readOptionalText(data.notes, 400),
   };
 
-  const calories = readOptionalInteger(data.calories, 0, 5000, "Calories");
-  const proteinG = readOptionalInteger(data.proteinG, 0, 500, "Protein");
-  const carbsG = readOptionalInteger(data.carbsG, 0, 500, "Carbs");
-  const fatG = readOptionalInteger(data.fatG, 0, 500, "Fat");
   const hasMacroInput = ["calories", "proteinG", "carbsG", "fatG"].some((key) =>
     Object.prototype.hasOwnProperty.call(data, key),
   );
 
-  if (hasMacroInput || calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
-    payload.calories = calories;
-    payload.protein_g = proteinG;
-    payload.carbs_g = carbsG;
-    payload.fat_g = fatG;
+  if (hasMacroInput) {
+    payload.calories = readOptionalInteger(data.calories, 0, 5000, "Calories");
+    payload.protein_g = readOptionalInteger(data.proteinG, 0, 500, "Protein");
+    payload.carbs_g = readOptionalInteger(data.carbsG, 0, 500, "Carbs");
+    payload.fat_g = readOptionalInteger(data.fatG, 0, 500, "Fat");
   }
 
   return payload;
@@ -219,9 +209,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const menuKey = id?.trim();
 
-  if (!menuKey) {
-    return NextResponse.json({ error: "Missing menu item id." }, { status: 400 });
-  }
+  if (!menuKey) return NextResponse.json({ error: "Missing menu item id." }, { status: 400 });
 
   const authResult = await requireAdmin();
   if ("error" in authResult) return authResult.error;
@@ -236,9 +224,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const resolvedMenuId = await resolveMenuId(authResult.adminClient, menuKey);
-  if (!resolvedMenuId) {
-    return NextResponse.json({ error: "Menu item not found." }, { status: 404 });
-  }
+  if (!resolvedMenuId) return NextResponse.json({ error: "Menu item not found." }, { status: 404 });
 
   const conflictResult = await authResult.adminClient
     .from("menu_items")

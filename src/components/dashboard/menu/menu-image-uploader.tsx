@@ -14,35 +14,43 @@ type Props = {
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
+function UploadIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" focusable="false" viewBox="0 0 24 24">
+      <path d="M12 16V4m0 0 4 4m-4-4L8 8" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+      <path d="M5 14v4.25A1.75 1.75 0 0 0 6.75 20h10.5A1.75 1.75 0 0 0 19 18.25V14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
 export function MenuImageUploader({ itemId, itemName, currentImageUrl, onUploaded }: Props) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const localPreviewRef = useRef<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const [preview, setPreview] = useState<string | null>(currentImageUrl);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
-    setPreview(currentImageUrl);
-  }, [currentImageUrl]);
+    if (!uploading && !objectUrlRef.current) setPreview(currentImageUrl);
+  }, [currentImageUrl, uploading]);
 
   useEffect(
     () => () => {
-      if (localPreviewRef.current) URL.revokeObjectURL(localPreviewRef.current);
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     },
     [],
   );
 
-  function clearLocalPreview() {
-    if (!localPreviewRef.current) return;
-    URL.revokeObjectURL(localPreviewRef.current);
-    localPreviewRef.current = null;
+  function clearObjectUrl() {
+    if (!objectUrlRef.current) return;
+    URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = null;
   }
 
   async function uploadFile(file: File) {
     if (uploading) return;
-
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       setError("Only JPEG, PNG, WebP, or AVIF files are accepted.");
       return;
@@ -54,10 +62,9 @@ export function MenuImageUploader({ itemId, itemName, currentImageUrl, onUploade
 
     setError(null);
     setUploading(true);
-    clearLocalPreview();
-
+    clearObjectUrl();
     const localUrl = URL.createObjectURL(file);
-    localPreviewRef.current = localUrl;
+    objectUrlRef.current = localUrl;
     setPreview(localUrl);
 
     try {
@@ -69,19 +76,17 @@ export function MenuImageUploader({ itemId, itemName, currentImageUrl, onUploade
         body: form,
       });
       const data = (await response.json().catch(() => null)) as { error?: string; imageUrl?: string } | null;
+      if (!response.ok || !data?.imageUrl) throw new Error(data?.error ?? "Upload failed.");
 
-      if (!response.ok || !data?.imageUrl) {
-        throw new Error(data?.error ?? "Upload failed.");
-      }
-
-      onUploaded(data.imageUrl);
+      clearObjectUrl();
       setPreview(data.imageUrl);
+      onUploaded(data.imageUrl);
       router.refresh();
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
+      clearObjectUrl();
       setPreview(currentImageUrl);
+      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
-      clearLocalPreview();
       setUploading(false);
     }
   }
@@ -100,63 +105,72 @@ export function MenuImageUploader({ itemId, itemName, currentImageUrl, onUploade
   }
 
   return (
-    <div className="menu-image-uploader">
+    <section aria-labelledby={`menu-image-title-${itemId}`} className="menu-image-uploader">
       <div className="menu-image-uploader__heading">
-        <p>Dish image</p>
-        <span>Image uploads save immediately. Other dish changes save separately.</span>
+        <div>
+          <h4 id={`menu-image-title-${itemId}`}>Dish image</h4>
+          <p>Image uploads save immediately. Other dish changes save separately.</p>
+        </div>
       </div>
 
       <div
-        className={`menu-image-dropzone ${dragOver ? "is-dragover" : ""}`}
+        className={`menu-image-dropzone${dragOver ? " is-dragover" : ""}`}
         onDragEnter={(event) => {
           event.preventDefault();
           if (!uploading) setDragOver(true);
         }}
-        onDragLeave={() => setDragOver(false)}
-        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOver(false);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (!uploading) setDragOver(true);
+        }}
         onDrop={handleDrop}
       >
-        {preview ? (
-          <Image
-            alt={`${itemName} menu preview`}
-            className="menu-image-preview"
-            fill
-            sizes="320px"
-            src={preview}
-            unoptimized
-          />
-        ) : (
-          <div className="menu-image-empty" aria-hidden="true">
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Z" />
-            </svg>
-          </div>
-        )}
-
         <button
-          className="menu-image-dropzone__action"
+          aria-busy={uploading}
+          className="menu-image-uploader__button"
           disabled={uploading}
           onClick={() => inputRef.current?.click()}
           type="button"
         >
-          {uploading ? "Uploading…" : preview ? "Replace image" : "Choose image"}
+          <span className="menu-image-uploader__preview">
+            {preview ? (
+              <Image
+                alt={`${itemName} menu preview`}
+                className="menu-image-preview"
+                fill
+                sizes="(max-width: 44rem) 100vw, 520px"
+                src={preview}
+                unoptimized
+              />
+            ) : (
+              <span className="menu-image-uploader__empty" aria-hidden="true"><UploadIcon /></span>
+            )}
+          </span>
+          <span className="menu-image-uploader__copy">
+            <strong>{preview ? "Replace image" : "Upload image"}</strong>
+            <span>Choose a file or drop it here</span>
+            <small>JPEG, PNG, WebP, or AVIF · maximum 5 MB</small>
+          </span>
         </button>
+
+        {uploading ? (
+          <p aria-live="polite" className="menu-image-uploader__status" role="status">Uploading image…</p>
+        ) : null}
       </div>
 
-      <p className="menu-image-uploader__help">JPEG, PNG, WebP, or AVIF. Maximum 5 MB. You can also drop a file above.</p>
-      <p aria-live="polite" className="menu-image-uploader__status">
-        {uploading ? `Uploading image for ${itemName}.` : ""}
-      </p>
       {error ? <p className="menu-image-error" role="alert">{error}</p> : null}
 
       <input
         accept="image/jpeg,image/png,image/webp,image/avif"
         className="menu-image-input"
-        disabled={uploading}
         onChange={handleFileChange}
         ref={inputRef}
+        tabIndex={-1}
         type="file"
       />
-    </div>
+    </section>
   );
 }

@@ -1,21 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  buildMenuInventoryRiskMap,
-  deriveMenuCategories,
-  filterMenuWorkspace,
-  getMenuAttentionReasons,
-  getMenuMediaState,
-  getMenuWorkspaceCounts,
-  menuMatchesSearch,
-  partitionMenuWorkspace,
-  sortMenuSiteOrder,
-} from "../src/lib/dashboard/menu-workspace.ts";
-import {
-  isMissingOptionalMenuMacroColumn,
-  stripOptionalMenuMacroColumns,
-} from "../src/lib/menu/menu-write-compat.ts";
+const workspace = await import("../src/lib/dashboard/menu-workspace.ts");
+const compat = await import("../src/lib/menu/menu-write-compat.ts");
 
 function menuItem(overrides = {}) {
   return {
@@ -26,15 +13,15 @@ function menuItem(overrides = {}) {
     priceCents: 1800,
     availability: "Live",
     allocationLimit: 20,
-    description: "Slow-braised beef and chutney.",
-    imageUrl: "https://example.com/menu.jpg",
-    storedImageUrl: "https://example.com/menu.jpg",
+    description: "Slow-braised beef with chutney.",
+    imageUrl: "https://example.com/nihari.jpg",
+    storedImageUrl: "https://example.com/nihari.jpg",
     imagePath: null,
     imageBucket: null,
     sortOrder: 10,
-    isFeatured: true,
+    isFeatured: false,
     isActive: true,
-    notes: "Keep featured.",
+    notes: "Core menu item",
     calories: null,
     proteinG: null,
     carbsG: null,
@@ -45,27 +32,27 @@ function menuItem(overrides = {}) {
 
 function inventoryItem(overrides = {}) {
   return {
-    id: "inventory-1",
-    name: "Cilantro",
+    id: "inv-1",
+    name: "Pickled Onions",
     unit: "trays",
     onHand: 1,
-    parLevel: 2,
+    parLevel: 3,
     status: "Low",
-    lastUpdatedAt: "2026-03-17T21:00:00.000Z",
+    lastUpdatedAt: "2026-08-02T00:00:00.000Z",
     notes: null,
     linkedMenuItems: [{ id: "menu-1", name: "Nihari Tacos" }],
     ...overrides,
   };
 }
 
-test("counts availability, offline, media, featured, attention, and linked dishes", () => {
-  const menu = [
+test("counts availability, offline, media, featured, attention, and links", () => {
+  const items = [
     menuItem(),
     menuItem({ id: "menu-2", availability: "Watch", isActive: false, imageUrl: null, storedImageUrl: null }),
-    menuItem({ id: "menu-3", availability: "Paused", isActive: false, isFeatured: false }),
-    menuItem({ id: "menu-4", availability: "Sold Out", isActive: false, isFeatured: false }),
+    menuItem({ id: "menu-3", availability: "Paused", isActive: false, imagePath: "items/3/photo.webp" }),
+    menuItem({ id: "menu-4", availability: "Sold Out", isActive: false, isFeatured: true, imageUrl: null, storedImageUrl: null }),
   ];
-  const counts = getMenuWorkspaceCounts(menu, [inventoryItem()]);
+  const counts = workspace.getMenuWorkspaceCounts(items, [inventoryItem()]);
 
   assert.deepEqual(counts, {
     total: 4,
@@ -74,165 +61,189 @@ test("counts availability, offline, media, featured, attention, and linked dishe
     Paused: 1,
     "Sold Out": 1,
     offline: 2,
-    mediaReady: 3,
-    mediaMissing: 1,
-    featured: 2,
+    mediaReady: 2,
+    mediaMissing: 2,
+    featured: 1,
     attention: 1,
     linkedDishes: 1,
   });
 });
 
-test("derives only real categories and deduplicates them case-insensitively", () => {
-  const categories = deriveMenuCategories([
-    menuItem({ category: "Signature" }),
-    menuItem({ id: "menu-2", category: " signature " }),
+test("derives real categories only and deduplicates case-insensitively", () => {
+  const categories = workspace.deriveMenuCategories([
+    menuItem({ category: "Bowls" }),
+    menuItem({ id: "menu-2", category: " bowls " }),
     menuItem({ id: "menu-3", category: "Wings" }),
+    menuItem({ id: "menu-4", category: "" }),
   ]);
 
-  assert.deepEqual(categories, ["Signature", "Wings"]);
-  assert.equal(categories.includes("meal-prep"), false);
+  assert.deepEqual(categories, [
+    { value: "bowls", label: "Bowls", count: 2 },
+    { value: "wings", label: "Wings", count: 1 },
+  ]);
+  assert.equal(categories.some((category) => category.value === "meal-prep"), false);
 });
 
-test("searches name, slug, category, availability, description, and notes", () => {
-  const item = menuItem({ notes: "Friday launch item" });
-  for (const query of ["nihari", "tacos", "signature", "live", "braised", "friday launch"]) {
-    assert.equal(menuMatchesSearch(item, query), true, query);
+test("searches every required menu field", () => {
+  const item = menuItem({
+    name: "Lamb Bowl",
+    slug: "lamb-bowl",
+    category: "Bowls",
+    availability: "Watch",
+    description: "Tender lamb and rice",
+    notes: "Premium upsell",
+  });
+
+  for (const query of ["lamb bowl", "lamb-bowl", "bowls", "watch", "tender lamb", "premium upsell"]) {
+    assert.equal(workspace.menuMatchesSearch(item, query), true, query);
   }
-  assert.equal(menuMatchesSearch(item, "dessert"), false);
+  assert.equal(workspace.menuMatchesSearch(item, "wings"), false);
 });
 
 test("combines availability, category, media, featured, and search filters", () => {
   const items = [
-    menuItem(),
-    menuItem({ id: "menu-2", category: "Wings", isFeatured: false, imageUrl: null, storedImageUrl: null }),
+    menuItem({ id: "menu-1", category: "Bowls", isFeatured: true, imagePath: "items/1/a.webp" }),
+    menuItem({ id: "menu-2", category: "Bowls", availability: "Watch", isActive: false, isFeatured: true }),
+    menuItem({ id: "menu-3", category: "Wings", isFeatured: true }),
+    menuItem({ id: "menu-4", category: "Bowls", isFeatured: false }),
   ];
 
-  const result = filterMenuWorkspace(items, {
-    search: "tacos",
+  const result = workspace.filterMenuWorkspace(items, {
     availability: "Live",
-    category: "signature",
+    category: "bowls",
     media: "ready",
     featuredOnly: true,
+    search: "nihari",
   });
 
   assert.deepEqual(result.map((item) => item.id), ["menu-1"]);
 });
 
 test("classifies stored, external, and missing media", () => {
-  assert.equal(getMenuMediaState(menuItem({ imagePath: "items/menu-1/photo.jpg" })), "stored");
-  assert.equal(getMenuMediaState(menuItem({ imagePath: null, storedImageUrl: "https://example.com/a.jpg" })), "external");
-  assert.equal(getMenuMediaState(menuItem({ imagePath: null, storedImageUrl: null, imageUrl: null })), "missing");
+  assert.equal(workspace.getMenuMediaState(menuItem({ imagePath: "items/1/a.webp" })), "stored");
+  assert.equal(workspace.getMenuMediaState(menuItem({ imagePath: null, storedImageUrl: "https://example.com/a.jpg" })), "external");
+  assert.equal(workspace.getMenuMediaState(menuItem({ imagePath: null, storedImageUrl: null, imageUrl: "https://signed.example/a" })), "external");
+  assert.equal(workspace.getMenuMediaState(menuItem({ imagePath: null, storedImageUrl: null, imageUrl: null })), "missing");
 });
 
 test("maps only Low and Out inventory risks", () => {
-  const risks = buildMenuInventoryRiskMap([
-    inventoryItem(),
-    inventoryItem({ id: "inventory-2", name: "Beef", status: "Out" }),
-    inventoryItem({ id: "inventory-3", status: "Watch" }),
-    inventoryItem({ id: "inventory-4", status: "Healthy" }),
+  const riskMap = workspace.buildMenuInventoryRiskMap([
+    inventoryItem({ id: "out", name: "Chicken", status: "Out" }),
+    inventoryItem({ id: "low", name: "Onions", status: "Low" }),
+    inventoryItem({ id: "watch", name: "Rice", status: "Watch" }),
+    inventoryItem({ id: "healthy", name: "Sauce", status: "Healthy" }),
   ]);
 
+  assert.deepEqual(riskMap.get("menu-1"), [
+    { id: "out", name: "Chicken", status: "Out" },
+    { id: "low", name: "Onions", status: "Low" },
+  ]);
+});
+
+test("zero links create no false ingredient risk", () => {
+  const item = menuItem();
+  const riskMap = workspace.buildMenuInventoryRiskMap([inventoryItem({ linkedMenuItems: [] })]);
+  assert.equal(riskMap.has(item.id), false);
+  assert.deepEqual(workspace.getMenuAttentionReasons(item, riskMap.get(item.id)), []);
+});
+
+test("derives attention reasons without treating non-live missing media as a defect", () => {
+  assert.deepEqual(workspace.getMenuAttentionReasons(menuItem({ isActive: false })), ["state-mismatch"]);
+  assert.deepEqual(workspace.getMenuAttentionReasons(menuItem({ imageUrl: null, storedImageUrl: null })), ["missing-media"]);
   assert.deepEqual(
-    risks.get("menu-1")?.map((risk) => [risk.inventoryItemName, risk.status]),
-    [["Beef", "Out"], ["Cilantro", "Low"]],
+    workspace.getMenuAttentionReasons(menuItem(), [{ id: "inv", name: "Onions", status: "Low" }]),
+    ["ingredient-risk"],
   );
-});
-
-test("zero links produces no false ingredient risk", () => {
-  const risks = buildMenuInventoryRiskMap([inventoryItem({ linkedMenuItems: [] })]);
-  assert.equal(risks.size, 0);
-  assert.deepEqual(getMenuAttentionReasons(menuItem(), []), []);
-});
-
-test("attention prioritizes visibility mismatch, live missing media, and live ingredient risk", () => {
-  const mismatch = getMenuAttentionReasons(menuItem({ isActive: false }), []);
-  assert.equal(mismatch[0].kind, "visibility-mismatch");
-
-  const missing = getMenuAttentionReasons(
-    menuItem({ imageUrl: null, storedImageUrl: null, imagePath: null }),
+  assert.deepEqual(
+    workspace.getMenuAttentionReasons(menuItem({ availability: "Watch", isActive: false, imageUrl: null, storedImageUrl: null })),
     [],
   );
-  assert.equal(missing[0].kind, "missing-live-media");
-
-  const ingredient = getMenuAttentionReasons(menuItem(), [
-    { inventoryItemId: "inventory-1", inventoryItemName: "Cilantro", status: "Low" },
-  ]);
-  assert.equal(ingredient[0].kind, "ingredient-risk");
-});
-
-test("non-live missing media is not automatically attention", () => {
-  const reasons = getMenuAttentionReasons(
-    menuItem({ availability: "Watch", isActive: false, imageUrl: null, storedImageUrl: null, imagePath: null }),
-    [],
-  );
-  assert.deepEqual(reasons, []);
 });
 
 test("sorts site order deterministically", () => {
-  const sorted = sortMenuSiteOrder([
-    menuItem({ id: "b", name: "Beta", sortOrder: 10 }),
-    menuItem({ id: "c", name: "Alpha", sortOrder: 20 }),
-    menuItem({ id: "a", name: "Alpha", sortOrder: 10 }),
+  const sorted = workspace.sortMenuSiteOrder([
+    menuItem({ id: "b", name: "Same", sortOrder: 20 }),
+    menuItem({ id: "c", name: "Zulu", sortOrder: 10 }),
+    menuItem({ id: "a", name: "Same", sortOrder: 20 }),
+    menuItem({ id: "d", name: "Alpha", sortOrder: 10 }),
   ]);
-  assert.deepEqual(sorted.map((item) => item.id), ["a", "b", "c"]);
+
+  assert.deepEqual(sorted.map((item) => item.id), ["d", "c", "a", "b"]);
 });
 
-test("partitions attention without duplicates and uses severity order", () => {
-  const mismatch = menuItem({ id: "mismatch", isActive: false, sortOrder: 50 });
-  const missing = menuItem({ id: "missing", imageUrl: null, storedImageUrl: null, imagePath: null, sortOrder: 10 });
-  const normal = menuItem({ id: "normal", sortOrder: 1 });
-  const partition = partitionMenuWorkspace([normal, missing, mismatch], []);
+test("sorts attention by reason severity then site order", () => {
+  const mismatch = menuItem({ id: "mismatch", isActive: false, sortOrder: 99 });
+  const missing = menuItem({ id: "missing", imageUrl: null, storedImageUrl: null, sortOrder: 50 });
+  const risk = menuItem({ id: "risk", sortOrder: 1 });
+  const riskMap = new Map([["risk", [{ id: "inv", name: "Onions", status: "Low" }]]]);
 
-  assert.deepEqual(partition.attention.map((entry) => entry.item.id), ["mismatch", "missing"]);
-  assert.deepEqual(partition.catalog.map((entry) => entry.item.id), ["normal"]);
-  assert.equal(new Set([...partition.attention, ...partition.catalog].map((entry) => entry.item.id)).size, 3);
+  const sorted = workspace.sortMenuAttention([risk, missing, mismatch], riskMap);
+  assert.deepEqual(sorted.map((item) => item.id), ["mismatch", "missing", "risk"]);
 });
 
-test("empty menu produces zero counts and empty partitions", () => {
-  assert.deepEqual(getMenuWorkspaceCounts([], []), {
-    total: 0,
-    Live: 0,
-    Watch: 0,
-    Paused: 0,
-    "Sold Out": 0,
-    offline: 0,
-    mediaReady: 0,
-    mediaMissing: 0,
-    featured: 0,
-    attention: 0,
-    linkedDishes: 0,
+test("partitions without duplicates", () => {
+  const attention = menuItem({ id: "attention", imageUrl: null, storedImageUrl: null });
+  const clean = menuItem({ id: "clean" });
+  const partition = workspace.partitionMenuWorkspace([attention, clean], new Map());
+
+  assert.deepEqual(partition.attentionItems.map((item) => item.id), ["attention"]);
+  assert.deepEqual(partition.catalogItems.map((item) => item.id), ["clean"]);
+  assert.equal(new Set([...partition.attentionItems, ...partition.catalogItems].map((item) => item.id)).size, 2);
+});
+
+test("empty menu behavior is stable", () => {
+  const counts = workspace.getMenuWorkspaceCounts([], []);
+  const query = workspace.queryMenuWorkspace([], [], {
+    availability: "all",
+    category: "all",
+    media: "all",
+    featuredOnly: false,
+    search: "",
   });
-  assert.deepEqual(partitionMenuWorkspace([], []), { attention: [], catalog: [] });
+
+  assert.equal(counts.total, 0);
+  assert.deepEqual(query.filtered, []);
+  assert.deepEqual(query.attentionItems, []);
+  assert.deepEqual(query.catalogItems, []);
 });
 
-test("recognizes only named missing macro-column errors", () => {
-  for (const column of ["calories", "protein_g", "carbs_g", "fat_g"]) {
+test("recognizes only named optional macro-column failures", () => {
+  for (const column of compat.OPTIONAL_MENU_MACRO_COLUMNS) {
     assert.equal(
-      isMissingOptionalMenuMacroColumn({ code: "PGRST204", message: `Could not find the '${column}' column` }),
+      compat.isMissingOptionalMenuMacroColumn({ code: "PGRST204", message: `Could not find the '${column}' column` }),
+      true,
+    );
+    assert.equal(
+      compat.isMissingOptionalMenuMacroColumn({ code: "42703", message: `column ${column} does not exist` }),
       true,
     );
   }
 
-  assert.equal(isMissingOptionalMenuMacroColumn({ code: "42703", message: "column calories does not exist" }), true);
-  assert.equal(isMissingOptionalMenuMacroColumn({ code: "PGRST204", message: "schema cache miss" }), false);
-  assert.equal(isMissingOptionalMenuMacroColumn({ code: "42703", message: "column is_active does not exist" }), false);
-  assert.equal(isMissingOptionalMenuMacroColumn({ code: "23505", message: "duplicate calories" }), false);
+  assert.equal(compat.isMissingOptionalMenuMacroColumn({ code: "PGRST204", message: "schema cache miss" }), false);
+  assert.equal(compat.isMissingOptionalMenuMacroColumn({ code: "42703", message: "column is_active does not exist" }), false);
+  assert.equal(compat.isMissingOptionalMenuMacroColumn({ code: "23505", message: "calories duplicate" }), false);
 });
 
-test("stripping macro columns preserves is_active, availability, and core fields", () => {
-  const stripped = stripOptionalMenuMacroColumns({
-    slug: "nihari-tacos",
+test("stripping macros preserves is_active, availability, and core fields", () => {
+  const payload = {
+    slug: "dish",
+    name: "Dish",
     availability: "live",
     is_active: true,
-    calories: 400,
+    price_cents: 1500,
+    calories: null,
     protein_g: 20,
-    carbs_g: 30,
+    carbs_g: null,
     fat_g: 10,
-  });
+  };
 
+  const stripped = compat.stripOptionalMenuMacroColumns(payload);
   assert.deepEqual(stripped, {
-    slug: "nihari-tacos",
+    slug: "dish",
+    name: "Dish",
     availability: "live",
     is_active: true,
+    price_cents: 1500,
   });
+  assert.equal(payload.protein_g, 20);
 });

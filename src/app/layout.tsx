@@ -6,6 +6,7 @@ import "../styles/primitives.css";
 import "../styles/frontier-dashboard.css";
 import "../styles/frontier-orders.css";
 import "../styles/frontier-inventory.css";
+import "../styles/frontier-menu.css";
 
 export const metadata: Metadata = {
   title: "Shama’s Kitchen Frontier Ops",

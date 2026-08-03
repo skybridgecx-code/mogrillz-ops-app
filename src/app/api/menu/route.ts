@@ -74,9 +74,7 @@ function readAvailability(value: unknown) {
   const legacyMatch = legacyMap[normalized];
   if (legacyMatch) return legacyMatch.toLowerCase();
 
-  const match = MENU_AVAILABILITY_VALUES.find(
-    (option) => option.toLowerCase() === normalized,
-  );
+  const match = MENU_AVAILABILITY_VALUES.find((option) => option.toLowerCase() === normalized);
   if (!match) throw new Error("Availability is invalid.");
   return match.toLowerCase();
 }
@@ -165,16 +163,15 @@ export async function POST(request: Request) {
       notes: readOptionalText(payload.notes, 400),
     };
 
-    const calories = readOptionalInteger(payload.calories, 0, 5000, "Calories");
-    const proteinG = readOptionalInteger(payload.proteinG, 0, 500, "Protein");
-    const carbsG = readOptionalInteger(payload.carbsG, 0, 500, "Carbs");
-    const fatG = readOptionalInteger(payload.fatG, 0, 500, "Fat");
+    const hasMacroInput = ["calories", "proteinG", "carbsG", "fatG"].some((key) =>
+      Object.prototype.hasOwnProperty.call(payload, key),
+    );
 
-    if (calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
-      insertPayload.calories = calories;
-      insertPayload.protein_g = proteinG;
-      insertPayload.carbs_g = carbsG;
-      insertPayload.fat_g = fatG;
+    if (hasMacroInput) {
+      insertPayload.calories = readOptionalInteger(payload.calories, 0, 5000, "Calories");
+      insertPayload.protein_g = readOptionalInteger(payload.proteinG, 0, 500, "Protein");
+      insertPayload.carbs_g = readOptionalInteger(payload.carbsG, 0, 500, "Carbs");
+      insertPayload.fat_g = readOptionalInteger(payload.fatG, 0, 500, "Fat");
     }
 
     let createResult = await authResult.adminClient
@@ -192,8 +189,7 @@ export async function POST(request: Request) {
     }
 
     if (createResult.error || !createResult.data) {
-      const message =
-        createResult.error?.code === "23505" ? "Slug is already in use." : "Failed to create menu item.";
+      const message = createResult.error?.code === "23505" ? "Slug is already in use." : "Failed to create menu item.";
       return NextResponse.json({ error: message }, { status: createResult.error?.code === "23505" ? 409 : 500 });
     }
 

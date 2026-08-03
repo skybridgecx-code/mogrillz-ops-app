@@ -1,50 +1,28 @@
-// @ts-expect-error The native Node test runner resolves this explicit TypeScript extension.
-import type {
-  InventoryItem,
-  InventoryStatus,
-  MenuAvailability,
-  MenuItem,
-} from "../../types/domain.ts";
+import type { InventoryItem, MenuAvailability, MenuItem } from "../../types/domain.ts";
 
 export type MenuAvailabilityFilter = "all" | MenuAvailability;
 export type MenuMediaFilter = "all" | "ready" | "missing";
 export type MenuMediaState = "stored" | "external" | "missing";
+export type MenuAttentionReason = "state-mismatch" | "missing-media" | "ingredient-risk";
 
 export interface MenuWorkspaceQuery {
-  search: string;
   availability: MenuAvailabilityFilter;
   category: string;
   media: MenuMediaFilter;
   featuredOnly: boolean;
+  search: string;
+}
+
+export interface MenuCategoryOption {
+  value: string;
+  label: string;
+  count: number;
 }
 
 export interface MenuInventoryRisk {
-  inventoryItemId: string;
-  inventoryItemName: string;
-  status: Extract<InventoryStatus, "Low" | "Out">;
-}
-
-export type MenuAttentionKind =
-  | "visibility-mismatch"
-  | "missing-live-media"
-  | "ingredient-risk";
-
-export interface MenuAttentionReason {
-  kind: MenuAttentionKind;
-  severity: number;
-  message: string;
-}
-
-export interface MenuWorkspaceItem {
-  item: MenuItem;
-  mediaState: MenuMediaState;
-  inventoryRisks: MenuInventoryRisk[];
-  attentionReasons: MenuAttentionReason[];
-}
-
-export interface MenuWorkspacePartition {
-  attention: MenuWorkspaceItem[];
-  catalog: MenuWorkspaceItem[];
+  id: string;
+  name: string;
+  status: "Low" | "Out";
 }
 
 export interface MenuWorkspaceCounts {
@@ -61,14 +39,28 @@ export interface MenuWorkspaceCounts {
   linkedDishes: number;
 }
 
-const ATTENTION_PRIORITY: Record<MenuAttentionKind, number> = {
-  "visibility-mismatch": 0,
-  "missing-live-media": 1,
+export interface MenuWorkspacePartition {
+  attentionItems: MenuItem[];
+  catalogItems: MenuItem[];
+}
+
+const ATTENTION_PRIORITY: Record<MenuAttentionReason, number> = {
+  "state-mismatch": 0,
+  "missing-media": 1,
   "ingredient-risk": 2,
+};
+
+const RISK_PRIORITY: Record<MenuInventoryRisk["status"], number> = {
+  Out: 0,
+  Low: 1,
 };
 
 function normalize(value: string | null | undefined) {
   return (value ?? "").trim().toLocaleLowerCase();
+}
+
+function compareText(left: string, right: string) {
+  return left.localeCompare(right, undefined, { sensitivity: "base" });
 }
 
 export function getMenuMediaState(item: MenuItem): MenuMediaState {
@@ -77,194 +69,157 @@ export function getMenuMediaState(item: MenuItem): MenuMediaState {
   return "missing";
 }
 
-export function deriveMenuCategories(items: MenuItem[]) {
-  const categories = new Map<string, string>();
+export function deriveMenuCategories(items: MenuItem[]): MenuCategoryOption[] {
+  const categories = new Map<string, MenuCategoryOption>();
 
   for (const item of items) {
-    const display = item.category.trim();
-    const key = normalize(display);
-    if (key && !categories.has(key)) categories.set(key, display);
+    const label = item.category.trim();
+    if (!label) continue;
+
+    const value = normalize(label);
+    const existing = categories.get(value);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+
+    categories.set(value, { value, label, count: 1 });
   }
 
-  return [...categories.values()].sort((left, right) =>
-    left.localeCompare(right, undefined, { sensitivity: "base" }),
-  );
+  return [...categories.values()].sort((left, right) => compareText(left.label, right.label));
 }
 
 export function menuMatchesSearch(item: MenuItem, search: string) {
   const query = normalize(search);
   if (!query) return true;
 
-  return [
-    item.name,
-    item.slug,
-    item.category,
-    item.availability,
-    item.description,
-    item.notes,
-  ]
+  return [item.name, item.slug, item.category, item.availability, item.description, item.notes]
     .map(normalize)
     .join("\n")
     .includes(query);
 }
 
+export function menuMatchesAvailability(item: MenuItem, availability: MenuAvailabilityFilter) {
+  return availability === "all" || item.availability === availability;
+}
+
+export function menuMatchesCategory(item: MenuItem, category: string) {
+  return category === "all" || normalize(item.category) === normalize(category);
+}
+
+export function menuMatchesMedia(item: MenuItem, media: MenuMediaFilter) {
+  if (media === "all") return true;
+  const state = getMenuMediaState(item);
+  return media === "missing" ? state === "missing" : state !== "missing";
+}
+
+export function filterMenuWorkspace(items: MenuItem[], query: MenuWorkspaceQuery) {
+  return items.filter(
+    (item) =>
+      menuMatchesAvailability(item, query.availability) &&
+      menuMatchesCategory(item, query.category) &&
+      menuMatchesMedia(item, query.media) &&
+      (!query.featuredOnly || item.isFeatured) &&
+      menuMatchesSearch(item, query.search),
+  );
+}
+
+export function sortMenuSiteOrder(items: MenuItem[]) {
+  return [...items].sort(
+    (left, right) =>
+      left.sortOrder - right.sortOrder ||
+      compareText(left.name, right.name) ||
+      compareText(left.id, right.id),
+  );
+}
+
 export function buildMenuInventoryRiskMap(inventory: InventoryItem[]) {
-  const map = new Map<string, MenuInventoryRisk[]>();
+  const riskMap = new Map<string, MenuInventoryRisk[]>();
 
-  for (const inventoryItem of inventory) {
-    if (inventoryItem.status !== "Low" && inventoryItem.status !== "Out") continue;
+  for (const stockItem of inventory) {
+    if (stockItem.status !== "Low" && stockItem.status !== "Out") continue;
 
-    for (const linked of inventoryItem.linkedMenuItems) {
-      const current = map.get(linked.id) ?? [];
-      current.push({
-        inventoryItemId: inventoryItem.id,
-        inventoryItemName: inventoryItem.name,
-        status: inventoryItem.status,
-      });
-      map.set(linked.id, current);
+    for (const linkedItem of stockItem.linkedMenuItems) {
+      const current = riskMap.get(linkedItem.id) ?? [];
+      if (!current.some((risk) => risk.id === stockItem.id)) {
+        current.push({ id: stockItem.id, name: stockItem.name, status: stockItem.status });
+        current.sort(
+          (left, right) =>
+            RISK_PRIORITY[left.status] - RISK_PRIORITY[right.status] || compareText(left.name, right.name),
+        );
+        riskMap.set(linkedItem.id, current);
+      }
     }
   }
 
-  for (const risks of map.values()) {
-    risks.sort((left, right) => {
-      if (left.status !== right.status) return left.status === "Out" ? -1 : 1;
-      return left.inventoryItemName.localeCompare(right.inventoryItemName, undefined, {
-        sensitivity: "base",
-      });
-    });
-  }
-
-  return map;
+  return riskMap;
 }
 
-export function getMenuAttentionReasons(
-  item: MenuItem,
-  inventoryRisks: MenuInventoryRisk[],
-): MenuAttentionReason[] {
+export function getRecordedMenuLinkIds(inventory: InventoryItem[]) {
+  const ids = new Set<string>();
+  for (const item of inventory) {
+    for (const linked of item.linkedMenuItems) ids.add(linked.id);
+  }
+  return ids;
+}
+
+export function getMenuAttentionReasons(item: MenuItem, risks: MenuInventoryRisk[] = []): MenuAttentionReason[] {
   const reasons: MenuAttentionReason[] = [];
   const shouldBeActive = item.availability === "Live";
 
   if (typeof item.isActive === "boolean" && item.isActive !== shouldBeActive) {
-    reasons.push({
-      kind: "visibility-mismatch",
-      severity: ATTENTION_PRIORITY["visibility-mismatch"],
-      message: "Stored public-visibility state disagrees with availability.",
-    });
+    reasons.push("state-mismatch");
   }
-
-  if (item.availability === "Live" && getMenuMediaState(item) === "missing") {
-    reasons.push({
-      kind: "missing-live-media",
-      severity: ATTENTION_PRIORITY["missing-live-media"],
-      message: "Live item has no recorded image.",
-    });
+  if (shouldBeActive && getMenuMediaState(item) === "missing") {
+    reasons.push("missing-media");
   }
-
-  if (item.availability === "Live" && inventoryRisks.length) {
-    reasons.push({
-      kind: "ingredient-risk",
-      severity: ATTENTION_PRIORITY["ingredient-risk"],
-      message: `Linked ingredient risk: ${inventoryRisks
-        .map((risk) => `${risk.inventoryItemName} (${risk.status})`)
-        .join(", ")}.`,
-    });
+  if (shouldBeActive && risks.length > 0) {
+    reasons.push("ingredient-risk");
   }
 
   return reasons;
 }
 
-export function menuMatchesWorkspaceQuery(
-  item: MenuItem,
-  query: MenuWorkspaceQuery,
-) {
-  if (query.availability !== "all" && item.availability !== query.availability) {
-    return false;
-  }
-
-  if (query.category !== "all" && normalize(item.category) !== normalize(query.category)) {
-    return false;
-  }
-
-  const mediaState = getMenuMediaState(item);
-  if (query.media === "missing" && mediaState !== "missing") return false;
-  if (query.media === "ready" && mediaState === "missing") return false;
-  if (query.featuredOnly && !item.isFeatured) return false;
-
-  return menuMatchesSearch(item, query.search);
-}
-
-export function filterMenuWorkspace(items: MenuItem[], query: MenuWorkspaceQuery) {
-  return items.filter((item) => menuMatchesWorkspaceQuery(item, query));
-}
-
-export function sortMenuSiteOrder(items: MenuItem[]) {
+export function sortMenuAttention(items: MenuItem[], riskMap: Map<string, MenuInventoryRisk[]>) {
   return [...items].sort((left, right) => {
-    const orderDifference = left.sortOrder - right.sortOrder;
-    if (orderDifference) return orderDifference;
+    const leftReason = getMenuAttentionReasons(left, riskMap.get(left.id))[0];
+    const rightReason = getMenuAttentionReasons(right, riskMap.get(right.id))[0];
+    const priorityDifference =
+      (leftReason ? ATTENTION_PRIORITY[leftReason] : Number.POSITIVE_INFINITY) -
+      (rightReason ? ATTENTION_PRIORITY[rightReason] : Number.POSITIVE_INFINITY);
 
-    const nameDifference = left.name.localeCompare(right.name, undefined, {
-      sensitivity: "base",
-    });
-    if (nameDifference) return nameDifference;
-
-    return left.id.localeCompare(right.id);
+    return (
+      priorityDifference ||
+      left.sortOrder - right.sortOrder ||
+      compareText(left.name, right.name) ||
+      compareText(left.id, right.id)
+    );
   });
-}
-
-function firstAttentionSeverity(item: MenuWorkspaceItem) {
-  return item.attentionReasons[0]?.severity ?? Number.POSITIVE_INFINITY;
 }
 
 export function partitionMenuWorkspace(
   items: MenuItem[],
-  inventory: InventoryItem[],
+  riskMap: Map<string, MenuInventoryRisk[]>,
 ): MenuWorkspacePartition {
-  const risksByMenuId = buildMenuInventoryRiskMap(inventory);
-  const wrapped = sortMenuSiteOrder(items).map<MenuWorkspaceItem>((item) => {
-    const inventoryRisks = risksByMenuId.get(item.id) ?? [];
-    return {
-      item,
-      mediaState: getMenuMediaState(item),
-      inventoryRisks,
-      attentionReasons: getMenuAttentionReasons(item, inventoryRisks),
-    };
-  });
+  const attention: MenuItem[] = [];
+  const catalog: MenuItem[] = [];
 
-  const attention = wrapped
-    .filter((entry) => entry.attentionReasons.length > 0)
-    .sort((left, right) => {
-      const severityDifference = firstAttentionSeverity(left) - firstAttentionSeverity(right);
-      if (severityDifference) return severityDifference;
+  for (const item of items) {
+    if (getMenuAttentionReasons(item, riskMap.get(item.id)).length) attention.push(item);
+    else catalog.push(item);
+  }
 
-      const orderDifference = left.item.sortOrder - right.item.sortOrder;
-      if (orderDifference) return orderDifference;
-
-      const nameDifference = left.item.name.localeCompare(right.item.name, undefined, {
-        sensitivity: "base",
-      });
-      return nameDifference || left.item.id.localeCompare(right.item.id);
-    });
-
-  const attentionIds = new Set(attention.map((entry) => entry.item.id));
-  const catalog = wrapped.filter((entry) => !attentionIds.has(entry.item.id));
-
-  return { attention, catalog };
+  return {
+    attentionItems: sortMenuAttention(attention, riskMap),
+    catalogItems: sortMenuSiteOrder(catalog),
+  };
 }
 
-export function queryMenuWorkspace(
-  menu: MenuItem[],
-  inventory: InventoryItem[],
-  query: MenuWorkspaceQuery,
-) {
-  return partitionMenuWorkspace(filterMenuWorkspace(menu, query), inventory);
-}
-
-export function getMenuWorkspaceCounts(
-  menu: MenuItem[],
-  inventory: InventoryItem[],
-): MenuWorkspaceCounts {
+export function getMenuWorkspaceCounts(items: MenuItem[], inventory: InventoryItem[]): MenuWorkspaceCounts {
+  const riskMap = buildMenuInventoryRiskMap(inventory);
+  const linkedDishes = getRecordedMenuLinkIds(inventory);
   const counts: MenuWorkspaceCounts = {
-    total: menu.length,
+    total: items.length,
     Live: 0,
     Watch: 0,
     Paused: 0,
@@ -274,31 +229,31 @@ export function getMenuWorkspaceCounts(
     mediaMissing: 0,
     featured: 0,
     attention: 0,
-    linkedDishes: 0,
+    linkedDishes: linkedDishes.size,
   };
 
-  const linkedMenuIds = new Set<string>();
-  for (const inventoryItem of inventory) {
-    for (const linked of inventoryItem.linkedMenuItems) linkedMenuIds.add(linked.id);
-  }
-
-  const risksByMenuId = buildMenuInventoryRiskMap(inventory);
-
-  for (const item of menu) {
+  for (const item of items) {
     counts[item.availability] += 1;
-    if (item.availability === "Paused" || item.availability === "Sold Out") {
-      counts.offline += 1;
-    }
-
+    if (item.availability === "Paused" || item.availability === "Sold Out") counts.offline += 1;
     if (getMenuMediaState(item) === "missing") counts.mediaMissing += 1;
     else counts.mediaReady += 1;
-
     if (item.isFeatured) counts.featured += 1;
-    if (linkedMenuIds.has(item.id)) counts.linkedDishes += 1;
-    if (getMenuAttentionReasons(item, risksByMenuId.get(item.id) ?? []).length) {
-      counts.attention += 1;
-    }
+    if (getMenuAttentionReasons(item, riskMap.get(item.id)).length) counts.attention += 1;
   }
 
   return counts;
+}
+
+export function queryMenuWorkspace(
+  items: MenuItem[],
+  inventory: InventoryItem[],
+  query: MenuWorkspaceQuery,
+) {
+  const riskMap = buildMenuInventoryRiskMap(inventory);
+  const filtered = sortMenuSiteOrder(filterMenuWorkspace(items, query));
+  return {
+    filtered,
+    riskMap,
+    ...partitionMenuWorkspace(filtered, riskMap),
+  };
 }
