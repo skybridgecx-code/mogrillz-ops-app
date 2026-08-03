@@ -289,14 +289,61 @@ export function CustomersView({
   const [mode, setMode] = useState<WorkspaceMode>("directory");
   const [selectedRow, setSelectedRow] = useState<CustomerDirectoryRow | null>(null);
   const detailButtons = useRef(new Map<string, HTMLButtonElement>());
+  const customersRoot = useRef<HTMLElement | null>(null);
   const rows = useMemo(() => buildCustomerDirectoryRows(customers, orders), [customers, orders]);
   const completeness = getWorkspaceCompleteness({ customerCount: customers.length, subscriberAvailability: optionalSources.subscribers, activityAvailability: optionalSources.activity, activityCount: activity.length });
   const selectedActivityScope = activityScope || ACTIVITY_SCOPE;
 
   useEffect(() => {
     if (!selectedRow) return;
-    const focusTimer = window.setTimeout(() => document.querySelector<HTMLButtonElement>(".sheet-close")?.focus(), 0);
-    return () => window.clearTimeout(focusTimer);
+
+    const getCustomerSheet = () => customersRoot.current?.querySelector<HTMLElement>(".sheet") ?? null;
+    const getFocusableElements = () => {
+      const sheet = getCustomerSheet();
+      if (!sheet) return [];
+      return Array.from(sheet.querySelectorAll<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
+        .filter((element) => !element.hasAttribute("disabled") && !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true" && element.tabIndex >= 0 && element.getClientRects().length > 0);
+    };
+    const focusFirstElement = () => getFocusableElements()[0]?.focus();
+    const focusTimer = window.setTimeout(() => getCustomerSheet()?.querySelector<HTMLButtonElement>(".sheet-close")?.focus(), 0);
+    const onFocusIn = (event: FocusEvent) => {
+      const sheet = getCustomerSheet();
+      if (!sheet || !(event.target instanceof Node) || sheet.contains(event.target)) return;
+      focusFirstElement();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const sheet = getCustomerSheet();
+      const focusableElements = getFocusableElements();
+      if (!sheet || !focusableElements.length) return;
+
+      const activeElement = document.activeElement;
+      if (!activeElement || !sheet.contains(activeElement)) {
+        event.preventDefault();
+        focusFirstElement();
+        return;
+      }
+
+      const activeIndex = focusableElements.indexOf(activeElement as HTMLElement);
+      if (activeIndex === -1) {
+        event.preventDefault();
+        (event.shiftKey ? focusableElements.at(-1) : focusableElements[0])?.focus();
+      } else if (event.shiftKey && activeIndex === 0) {
+        event.preventDefault();
+        focusableElements.at(-1)?.focus();
+      } else if (!event.shiftKey && activeIndex === focusableElements.length - 1) {
+        event.preventDefault();
+        focusableElements[0]?.focus();
+      }
+    };
+
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [selectedRow]);
 
   function closeDetails() {
@@ -306,7 +353,7 @@ export function CustomersView({
   }
 
   return (
-    <section aria-labelledby="customers-activity-heading" className="frontier-customers">
+    <section aria-labelledby="customers-activity-heading" className="frontier-customers" ref={customersRoot}>
       <div className="frontier-customers__workspace-content" inert={selectedRow ? true : undefined}>
         <div className="frontier-customers__intro"><div><p className="frontier-customers__eyebrow">Customer intelligence</p><h2 id="customers-activity-heading">Customers &amp; Activity</h2><p>Read-only customer context and recorded lifecycle evidence for the current dashboard snapshot.</p></div><span className={`frontier-customers__completeness frontier-customers__completeness--${completeness}`}>{completeness === "degraded" ? "Degraded source coverage" : completeness === "empty" ? "No records" : "Snapshot coverage"}</span></div>
         <div aria-label="Customers and activity modes" className="frontier-customers__mode-switcher">
