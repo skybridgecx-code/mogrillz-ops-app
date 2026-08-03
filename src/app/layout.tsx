@@ -97,6 +97,102 @@ const legacyViewCompatibilityStyles = `
 .command-insight .section-header__title {
   overflow-wrap: anywhere;
 }
+
+@media (max-width: 44rem) {
+  .frontier-view--orders {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+
+  .frontier-view--orders .order-workspace,
+  .frontier-view--orders .order-workspace > *,
+  .frontier-view--orders .order-workspace__toolbar,
+  .frontier-view--orders .order-workspace__search,
+  .frontier-view--orders .order-workspace__filters,
+  .frontier-view--orders .order-board,
+  .frontier-view--orders .order-lane,
+  .frontier-view--orders .order-lane__body,
+  .frontier-view--orders .order-ticket,
+  .frontier-view--orders .order-ticket__open {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .frontier-view--orders .order-workspace__summary {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .frontier-view--orders .order-workspace__summary > div {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .frontier-view--orders .order-workspace__summary span,
+  .frontier-view--orders .order-workspace__summary strong,
+  .frontier-view--orders .order-workspace__result-count,
+  .frontier-view--orders .order-lane__empty,
+  .frontier-view--orders .order-ticket__customer,
+  .frontier-view--orders .order-ticket__items,
+  .frontier-view--orders .order-ticket__meta > * {
+    overflow-wrap: anywhere;
+  }
+
+  .frontier-view--orders .order-workspace__filters {
+    width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .frontier-view--orders .order-workspace__filters::-webkit-scrollbar {
+    display: block;
+    height: 0.3rem;
+  }
+
+  .frontier-view--orders .order-workspace__filters::-webkit-scrollbar-track {
+    background: var(--fo-color-surface-muted);
+  }
+
+  .frontier-view--orders .order-workspace__filters::-webkit-scrollbar-thumb {
+    border-radius: var(--fo-radius-pill);
+    background: var(--fo-color-border-strong);
+  }
+
+  .frontier-view--orders .order-workspace__filters button {
+    flex: 0 0 auto;
+  }
+
+  .frontier-view--orders .order-board,
+  .frontier-view--orders .order-board[data-columns="1"],
+  .frontier-view--orders .order-board[data-columns="3"] {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .frontier-view--orders .order-ticket__topline,
+  .frontier-view--orders .order-ticket__meta,
+  .frontier-view--orders .order-ticket__footer {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .frontier-view--orders .order-ticket__meta > * {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .frontier-view--orders .order-workspace__advance {
+    max-width: 100%;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+  }
+}
 `;
 
 export default function RootLayout({
