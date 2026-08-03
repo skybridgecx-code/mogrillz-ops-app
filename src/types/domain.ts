@@ -21,6 +21,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   orderNumber: string;
+  customerId: string | null;
   customerName: string;
   customerEmail: string | null;
   customerZone: string;
@@ -37,6 +38,16 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   items: OrderItem[];
+}
+
+export interface OrderStatusEvent {
+  id: string;
+  orderId: string;
+  fromStatus: OrderStatus;
+  toStatus: OrderStatus;
+  orderVersion: number;
+  changedBy: string | null;
+  changedAt: string;
 }
 
 export interface InventoryLinkedMenuItem {
@@ -88,7 +99,7 @@ export interface Customer {
   lifetimeValueCents: number;
   loyaltyTier: "Early" | "Rising" | "High" | "VIP";
   notes: string | null;
-  lastOrderAt: string;
+  lastOrderAt: string | null;
 }
 
 export interface EmailUpdate {
@@ -133,5 +144,17 @@ export interface DashboardSnapshot {
   menu: MenuItem[];
   customers: Customer[];
   emailUpdates: EmailUpdate[];
+  activity: OrderStatusEvent[];
+  optionalSources: {
+    subscribers: {
+      status: "loaded" | "unavailable";
+      issue: string | null;
+    };
+    activity: {
+      status: "loaded" | "unavailable";
+      issue: string | null;
+    };
+  };
+  activityScope: "order-status-events-only";
   insights: Insight[];
 }

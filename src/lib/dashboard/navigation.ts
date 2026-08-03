@@ -34,9 +34,9 @@ export const DASHBOARD_NAV: readonly DashboardNavItem[] = [
   },
   {
     key: "customers",
-    label: "Customers",
-    short: "People",
-    description: "Review regulars, VIPs, and subscribers waiting for the next update.",
+    label: "Customers & Activity",
+    short: "Customers",
+    description: "Review customer records, subscriber context, and recorded order-status activity.",
   },
   {
     key: "analytics",
@@ -51,7 +51,7 @@ export const VIEW_TITLES: Record<ViewKey, string> = {
   orders: "Order Board",
   inventory: "Inventory",
   menu: "Menu Studio",
-  customers: "Customers",
+  customers: "Customers & Activity",
   analytics: "Analytics",
 };
 
