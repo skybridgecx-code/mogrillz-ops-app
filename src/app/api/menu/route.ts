@@ -1,29 +1,14 @@
 import { NextResponse } from "next/server";
 
+import {
+  isMissingOptionalMenuMacroColumn,
+  stripOptionalMenuMacroColumns,
+} from "@/lib/menu/menu-write-compat";
 import { userHasAdminMembership } from "@/lib/supabase/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
-const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
-const OPTIONAL_MENU_COLUMNS = [...MACRO_COLUMNS, "is_active"] as const;
-
-function isMissingOptionalMenuColumn(error: { message?: string; code?: string } | null | undefined) {
-  const message = error?.message?.toLowerCase() ?? "";
-  return (
-    error?.code === "42703" ||
-    error?.code === "PGRST204" ||
-    OPTIONAL_MENU_COLUMNS.some((column) => message.includes(column))
-  );
-}
-
-function stripOptionalMenuColumns<T extends Record<string, unknown>>(payload: T) {
-  const next = { ...payload };
-  for (const column of OPTIONAL_MENU_COLUMNS) {
-    delete next[column];
-  }
-  return next;
-}
 
 function slugify(value: string) {
   return value
@@ -89,9 +74,7 @@ function readAvailability(value: unknown) {
   const legacyMatch = legacyMap[normalized];
   if (legacyMatch) return legacyMatch.toLowerCase();
 
-  const match = MENU_AVAILABILITY_VALUES.find(
-    (option) => option.toLowerCase() === normalized,
-  );
+  const match = MENU_AVAILABILITY_VALUES.find((option) => option.toLowerCase() === normalized);
   if (!match) throw new Error("Availability is invalid.");
   return match.toLowerCase();
 }
@@ -162,9 +145,7 @@ export async function POST(request: Request) {
     const name = readText(payload.name, 120, "Name");
     slug = slugify(typeof payload.slug === "string" ? payload.slug : name);
 
-    if (!slug) {
-      throw new Error("Slug is required.");
-    }
+    if (!slug) throw new Error("Slug is required.");
 
     const availability = readAvailability(payload.availability);
     const insertPayload: Record<string, unknown> = {
@@ -182,18 +163,15 @@ export async function POST(request: Request) {
       notes: readOptionalText(payload.notes, 400),
     };
 
-    // Macros are optional and only written when provided, so item creation
-    // keeps working before the meal-prep migration has been applied.
-    const calories = readOptionalInteger(payload.calories, 0, 5000, "Calories");
-    const proteinG = readOptionalInteger(payload.proteinG, 0, 500, "Protein");
-    const carbsG = readOptionalInteger(payload.carbsG, 0, 500, "Carbs");
-    const fatG = readOptionalInteger(payload.fatG, 0, 500, "Fat");
+    const hasMacroInput = ["calories", "proteinG", "carbsG", "fatG"].some((key) =>
+      Object.prototype.hasOwnProperty.call(payload, key),
+    );
 
-    if (calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
-      insertPayload.calories = calories;
-      insertPayload.protein_g = proteinG;
-      insertPayload.carbs_g = carbsG;
-      insertPayload.fat_g = fatG;
+    if (hasMacroInput) {
+      insertPayload.calories = readOptionalInteger(payload.calories, 0, 5000, "Calories");
+      insertPayload.protein_g = readOptionalInteger(payload.proteinG, 0, 500, "Protein");
+      insertPayload.carbs_g = readOptionalInteger(payload.carbsG, 0, 500, "Carbs");
+      insertPayload.fat_g = readOptionalInteger(payload.fatG, 0, 500, "Fat");
     }
 
     let createResult = await authResult.adminClient
@@ -202,17 +180,16 @@ export async function POST(request: Request) {
       .select("*")
       .single();
 
-    if (createResult.error && isMissingOptionalMenuColumn(createResult.error)) {
+    if (createResult.error && isMissingOptionalMenuMacroColumn(createResult.error)) {
       createResult = await authResult.adminClient
         .from("menu_items")
-        .insert(stripOptionalMenuColumns(insertPayload))
+        .insert(stripOptionalMenuMacroColumns(insertPayload))
         .select("*")
         .single();
     }
 
     if (createResult.error || !createResult.data) {
-      const message =
-        createResult.error?.code === "23505" ? "Slug is already in use." : "Failed to create menu item.";
+      const message = createResult.error?.code === "23505" ? "Slug is already in use." : "Failed to create menu item.";
       return NextResponse.json({ error: message }, { status: createResult.error?.code === "23505" ? 409 : 500 });
     }
 

@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 
+import {
+  isMissingOptionalMenuMacroColumn,
+  stripOptionalMenuMacroColumns,
+} from "@/lib/menu/menu-write-compat";
 import { userHasAdminMembership } from "@/lib/supabase/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const MENU_AVAILABILITY_VALUES = ["Live", "Watch", "Paused", "Sold Out"] as const;
-const MACRO_COLUMNS = ["calories", "protein_g", "carbs_g", "fat_g"] as const;
-const OPTIONAL_MENU_COLUMNS = [...MACRO_COLUMNS, "is_active"] as const;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -23,7 +25,7 @@ type MenuPayload = {
   image_url: string | null;
   sort_order: number;
   is_featured: boolean;
-  is_active?: boolean;
+  is_active: boolean;
   notes: string | null;
   calories?: number | null;
   protein_g?: number | null;
@@ -48,23 +50,6 @@ function readOptionalInteger(value: unknown, min: number, max: number, field: st
   return Math.round(parsed);
 }
 
-function isMissingOptionalMenuColumn(error: { message?: string; code?: string } | null | undefined) {
-  const message = error?.message?.toLowerCase() ?? "";
-  return (
-    error?.code === "42703" ||
-    error?.code === "PGRST204" ||
-    OPTIONAL_MENU_COLUMNS.some((column) => message.includes(column))
-  );
-}
-
-function stripOptionalMenuColumns(payload: MenuPayload) {
-  const next = { ...payload };
-  for (const column of OPTIONAL_MENU_COLUMNS) {
-    delete next[column];
-  }
-  return next;
-}
-
 function slugify(value: string) {
   return value
     .trim()
@@ -75,40 +60,28 @@ function slugify(value: string) {
 }
 
 function readText(value: unknown, maxLength: number, field: string) {
-  if (typeof value !== "string") {
-    throw new Error(`${field} is required.`);
-  }
+  if (typeof value !== "string") throw new Error(`${field} is required.`);
 
   const normalized = value.trim();
-  if (!normalized) {
-    throw new Error(`${field} is required.`);
-  }
-  if (normalized.length > maxLength) {
-    throw new Error(`${field} must be ${maxLength} characters or fewer.`);
-  }
+  if (!normalized) throw new Error(`${field} is required.`);
+  if (normalized.length > maxLength) throw new Error(`${field} must be ${maxLength} characters or fewer.`);
 
   return normalized;
 }
 
 function readOptionalText(value: unknown, maxLength: number) {
   if (value == null) return null;
-  if (typeof value !== "string") {
-    throw new Error("Optional text fields must be strings.");
-  }
+  if (typeof value !== "string") throw new Error("Optional text fields must be strings.");
 
   const normalized = value.trim();
   if (!normalized) return null;
-  if (normalized.length > maxLength) {
-    throw new Error(`Optional text fields must be ${maxLength} characters or fewer.`);
-  }
+  if (normalized.length > maxLength) throw new Error(`Optional text fields must be ${maxLength} characters or fewer.`);
 
   return normalized;
 }
 
 function readAvailability(value: unknown) {
-  if (typeof value !== "string") {
-    throw new Error("Availability is required.");
-  }
+  if (typeof value !== "string") throw new Error("Availability is required.");
 
   const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
   const legacyMap: Record<string, (typeof MENU_AVAILABILITY_VALUES)[number]> = {
@@ -130,12 +103,8 @@ function readAvailability(value: unknown) {
   const legacyMatch = legacyMap[normalized];
   if (legacyMatch) return legacyMatch.toLowerCase();
 
-  const match = MENU_AVAILABILITY_VALUES.find(
-    (option) => option.toLowerCase() === normalized,
-  );
-  if (!match) {
-    throw new Error("Availability is invalid.");
-  }
+  const match = MENU_AVAILABILITY_VALUES.find((option) => option.toLowerCase() === normalized);
+  if (!match) throw new Error("Availability is invalid.");
 
   return match.toLowerCase();
 }
@@ -156,10 +125,7 @@ function readInteger(value: unknown, min: number, max: number, field: string) {
 }
 
 function readBoolean(value: unknown, field: string) {
-  if (typeof value !== "boolean") {
-    throw new Error(`${field} must be true or false.`);
-  }
-
+  if (typeof value !== "boolean") throw new Error(`${field} must be true or false.`);
   return value;
 }
 
@@ -169,9 +135,7 @@ function readMenuPayload(body: unknown): MenuPayload {
   const slugInput = typeof data.slug === "string" ? data.slug : name;
   const slug = slugify(slugInput);
 
-  if (!slug) {
-    throw new Error("Slug is required.");
-  }
+  if (!slug) throw new Error("Slug is required.");
 
   const availability = readAvailability(data.availability);
   const payload: MenuPayload = {
@@ -189,19 +153,15 @@ function readMenuPayload(body: unknown): MenuPayload {
     notes: readOptionalText(data.notes, 400),
   };
 
-  const calories = readOptionalInteger(data.calories, 0, 5000, "Calories");
-  const proteinG = readOptionalInteger(data.proteinG, 0, 500, "Protein");
-  const carbsG = readOptionalInteger(data.carbsG, 0, 500, "Carbs");
-  const fatG = readOptionalInteger(data.fatG, 0, 500, "Fat");
   const hasMacroInput = ["calories", "proteinG", "carbsG", "fatG"].some((key) =>
     Object.prototype.hasOwnProperty.call(data, key),
   );
 
-  if (hasMacroInput || calories !== null || proteinG !== null || carbsG !== null || fatG !== null) {
-    payload.calories = calories;
-    payload.protein_g = proteinG;
-    payload.carbs_g = carbsG;
-    payload.fat_g = fatG;
+  if (hasMacroInput) {
+    payload.calories = readOptionalInteger(data.calories, 0, 5000, "Calories");
+    payload.protein_g = readOptionalInteger(data.proteinG, 0, 500, "Protein");
+    payload.carbs_g = readOptionalInteger(data.carbsG, 0, 500, "Carbs");
+    payload.fat_g = readOptionalInteger(data.fatG, 0, 500, "Fat");
   }
 
   return payload;
@@ -249,9 +209,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const menuKey = id?.trim();
 
-  if (!menuKey) {
-    return NextResponse.json({ error: "Missing menu item id." }, { status: 400 });
-  }
+  if (!menuKey) return NextResponse.json({ error: "Missing menu item id." }, { status: 400 });
 
   const authResult = await requireAdmin();
   if ("error" in authResult) return authResult.error;
@@ -266,9 +224,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const resolvedMenuId = await resolveMenuId(authResult.adminClient, menuKey);
-  if (!resolvedMenuId) {
-    return NextResponse.json({ error: "Menu item not found." }, { status: 404 });
-  }
+  if (!resolvedMenuId) return NextResponse.json({ error: "Menu item not found." }, { status: 404 });
 
   const conflictResult = await authResult.adminClient
     .from("menu_items")
@@ -288,10 +244,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     .select("*")
     .single();
 
-  if (updateResult.error && isMissingOptionalMenuColumn(updateResult.error)) {
+  if (updateResult.error && isMissingOptionalMenuMacroColumn(updateResult.error)) {
     updateResult = await authResult.adminClient
       .from("menu_items")
-      .update(stripOptionalMenuColumns(payload))
+      .update(stripOptionalMenuMacroColumns(payload))
       .eq("id", resolvedMenuId)
       .select("*")
       .single();

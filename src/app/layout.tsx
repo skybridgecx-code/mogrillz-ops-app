@@ -6,6 +6,7 @@ import "../styles/primitives.css";
 import "../styles/frontier-dashboard.css";
 import "../styles/frontier-orders.css";
 import "../styles/frontier-inventory.css";
+import "../styles/frontier-menu.css";
 
 export const metadata: Metadata = {
   title: "Shama’s Kitchen Frontier Ops",
@@ -97,6 +98,18 @@ const legacyViewCompatibilityStyles = `
 
 .command-insight .section-header__title {
   overflow-wrap: anywhere;
+}
+
+.frontier-shell:has(.frontier-view--menu) .frontier-brand__product,
+.frontier-shell:has(.frontier-view--menu) .frontier-bottom-nav__item:not([aria-current="page"]),
+.frontier-view--menu .menu-editor__section > header p,
+.frontier-view--menu .menu-image-uploader__heading p,
+.frontier-view--menu .menu-editor__field > span,
+.frontier-view--menu .menu-editor__field small,
+.frontier-view--menu .menu-editor__check small,
+.frontier-view--menu .menu-image-uploader__copy span,
+.frontier-view--menu .menu-image-uploader__copy small {
+  color: var(--fo-color-ink);
 }
 
 @media (max-width: 44rem) {
