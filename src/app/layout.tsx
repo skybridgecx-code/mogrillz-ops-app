@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import "./globals.css";
+import "../styles/accessibility.css";
 import "../styles/primitives.css";
 import "../styles/frontier-dashboard.css";
 import "../styles/frontier-orders.css";
