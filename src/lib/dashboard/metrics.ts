@@ -51,6 +51,18 @@ export function getBusinessDateKey(
   return `${year}-${month}-${day}`;
 }
 
+export function formatBusinessDateLabel(
+  now: Date | string | number = new Date(),
+  timeZone = DEFAULT_BUSINESS_TIME_ZONE,
+) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  }).format(toValidDate(now));
+}
+
 export function normalizePaymentStatus(value: string) {
   return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
 }

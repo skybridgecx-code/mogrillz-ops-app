@@ -15,6 +15,7 @@ import { SectionHeader } from "@/components/foundation/SectionHeader";
 import { StatusBadge } from "@/components/foundation/StatusBadge";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { timeAgo } from "@/lib/dashboard/format";
+import { formatBusinessDateLabel } from "@/lib/dashboard/metrics";
 import {
   DASHBOARD_NAV,
   VIEW_TITLES,
@@ -173,6 +174,7 @@ function DashboardInner({
   }
 
   const syncedLabel = dataSource === "mock" ? "Demo data" : `Live · ${timeAgo(snapshot.generatedAt, now)}`;
+  const businessDateLabel = formatBusinessDateLabel(now);
   const activeNav = DASHBOARD_NAV.find((item) => item.key === view) ?? DASHBOARD_NAV[0];
 
   if (dataIssue && !initialSnapshot) {
@@ -248,7 +250,13 @@ function DashboardInner({
           </div>
           <div className="frontier-topbar__status">
             <StatusBadge status={dataSource === "mock" ? "neutral" : "ready"}>{syncedLabel}</StatusBadge>
-            <StatusBadge status="review">{readModels.today.operations.serviceDateLabel}</StatusBadge>
+            <StatusBadge
+              aria-label={`Business date: ${businessDateLabel}`}
+              status="review"
+              title="Current business date in America/New_York"
+            >
+              {businessDateLabel}
+            </StatusBadge>
           </div>
         </header>
 
