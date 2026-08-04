@@ -12,6 +12,7 @@ import { formatCurrency, summarizeItems, timeAgo } from "@/lib/dashboard/format"
 import type { ViewKey } from "@/lib/dashboard/navigation";
 import { getNextOrderStatus } from "@/lib/dashboard/order-status";
 import type { TodayReadModel } from "@/lib/dashboard/read-models";
+import type { ApplicationAvailabilitySummary } from "@/lib/dashboard/readiness-summary";
 import type { OrderStatus } from "@/types/domain";
 
 interface AttentionItem {
@@ -53,11 +54,13 @@ export function TodayView({
   now,
   goTo,
   api,
+  readiness,
 }: {
   model: TodayReadModel;
   now: number;
   goTo: (view: ViewKey) => void;
   api: OpsApi;
+  readiness: ApplicationAvailabilitySummary;
 }) {
   const { activeOrders, insights, kpis, lowStock, operations } = model;
   const newOrders = activeOrders.filter((order) => order.status === "New");
@@ -286,6 +289,57 @@ export function TodayView({
                 title="No stock exceptions"
               />
             )}
+          </Panel>
+
+          <Panel className="command-panel command-readiness">
+            <SectionHeader
+              action={
+                <StatusBadge status={readiness.statusTone}>
+                  {readiness.statusLabel}
+                </StatusBadge>
+              }
+              eyebrow="Application availability"
+              title="Current data coverage"
+            />
+            <p className="command-readiness__disclosure">
+              {readiness.disclosure}
+            </p>
+            <div
+              aria-label="Current application data availability"
+              className="command-readiness__list"
+            >
+              {readiness.items.map((item) => (
+                <div className="command-readiness__item" key={item.id}>
+                  <div>
+                    <p className="command-readiness__label">
+                      {item.label}
+                    </p>
+                    <p className="command-readiness__detail">
+                      {item.detail}
+                    </p>
+                  </div>
+                  <StatusBadge status={item.tone}>
+                    {item.value}
+                  </StatusBadge>
+                </div>
+              ))}
+            </div>
+            <div className="command-readiness__actions">
+              <button
+                className="frontier-link-button"
+                onClick={() => goTo("customers")}
+                type="button"
+              >
+                Review source coverage
+              </button>
+              <button
+                className="frontier-link-button"
+                onClick={() => goTo("analytics")}
+                type="button"
+              >
+                Open loaded reports
+              </button>
+            </div>
           </Panel>
 
           {primaryInsight ? (

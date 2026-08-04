@@ -17,6 +17,10 @@ import { ToastProvider, useToast } from "@/components/ui/toast";
 import { timeAgo } from "@/lib/dashboard/format";
 import { formatBusinessDateLabel } from "@/lib/dashboard/metrics";
 import {
+  buildReadinessSummary,
+  type ApplicationDataSource,
+} from "@/lib/dashboard/readiness-summary";
+import {
   DASHBOARD_NAV,
   VIEW_TITLES,
   isViewKey,
@@ -24,8 +28,6 @@ import {
 } from "@/lib/dashboard/navigation";
 import { createDashboardReadModels } from "@/lib/dashboard/read-models";
 import type { DashboardSnapshot, MenuItem, Order } from "@/types/domain";
-
-type DataSourceKind = "mock" | "supabase";
 
 export interface MenuPayload {
   slug: string;
@@ -82,13 +84,22 @@ function DashboardInner({
   dataIssue,
 }: {
   snapshot: DashboardSnapshot | null;
-  dataSource: DataSourceKind;
+  dataSource: ApplicationDataSource;
   dataIssue?: string | null;
 }) {
   const router = useRouter();
   const toast = useToast();
   const snapshot = initialSnapshot ?? EMPTY_SNAPSHOT;
   const readModels = useMemo(() => createDashboardReadModels(snapshot), [snapshot]);
+  const readiness = useMemo(
+    () =>
+      buildReadinessSummary({
+        dataSource,
+        generatedAt: snapshot.generatedAt,
+        optionalSources: snapshot.optionalSources,
+      }),
+    [dataSource, snapshot.generatedAt, snapshot.optionalSources],
+  );
 
   const [view, setView] = useState<ViewKey>("today");
   const [now, setNow] = useState(() => Date.now());
@@ -262,7 +273,15 @@ function DashboardInner({
 
         <div className="frontier-content">
           <div className={`frontier-view frontier-view--${view}`} key={view}>
-            {view === "today" && <TodayView api={api} goTo={goTo} model={readModels.today} now={now} />}
+            {view === "today" && (
+              <TodayView
+                api={api}
+                goTo={goTo}
+                model={readModels.today}
+                now={now}
+                readiness={readiness}
+              />
+            )}
             {view === "orders" && <OrdersView api={api} now={now} orders={readModels.orders.orders} />}
             {view === "inventory" && <InventoryView api={api} inventory={readModels.inventory.inventory} />}
             {view === "menu" && (
@@ -314,7 +333,7 @@ function DashboardInner({
 
 export function DashboardApp(props: {
   snapshot: DashboardSnapshot | null;
-  dataSource: DataSourceKind;
+  dataSource: ApplicationDataSource;
   dataIssue?: string | null;
 }) {
   return (
