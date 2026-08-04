@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/admin-membership.test.mjs tests/order-status.test.mjs tests/dashboard-metrics.test.mjs tests/inventory-workspace.test.mjs tests/menu-workspace.test.mjs tests/customer-activity-workspace.test.mjs",
+    "test": "node --test tests/admin-membership.test.mjs tests/order-status.test.mjs tests/dashboard-metrics.test.mjs tests/inventory-workspace.test.mjs tests/menu-workspace.test.mjs tests/customer-activity-workspace.test.mjs tests/reports-workspace.test.mjs",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
