@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildCanonicalKpis,
+  formatBusinessDateLabel,
   getBusinessDateKey,
   normalizePaymentStatus,
   withCanonicalMetrics,
@@ -68,6 +69,18 @@ function snapshot(kpis, orders, stock) {
 test("resolves the Eastern business date across the UTC midnight boundary", () => {
   assert.equal(getBusinessDateKey("2026-08-03T03:59:59.000Z"), "2026-08-02");
   assert.equal(getBusinessDateKey("2026-08-03T04:00:00.000Z"), "2026-08-03");
+});
+
+test("formats the Eastern business date used by the global header", () => {
+  assert.equal(
+    formatBusinessDateLabel("2026-08-04T03:12:00.000Z"),
+    "Monday, Aug 3",
+  );
+
+  assert.equal(
+    formatBusinessDateLabel("2026-08-04T04:00:00.000Z"),
+    "Tuesday, Aug 4",
+  );
 });
 
 test("normalizes only the supported paid-status spellings", () => {
