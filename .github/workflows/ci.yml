@@ -70,3 +70,4 @@ jobs:
           psql --set ON_ERROR_STOP=1 --file tests/sql/backup-table-security-contract.sql
           psql --set ON_ERROR_STOP=1 --file tests/sql/trigger-function-search-path-contract.sql
           psql --set ON_ERROR_STOP=1 --file tests/sql/admin-authorization-helper-contract.sql
+          psql --set ON_ERROR_STOP=1 --file tests/sql/event-leads-client-access-contract.sql
