@@ -58,11 +58,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes postgresql-client
 
-      - name: Apply schema and run lifecycle contract
+      - name: Apply schema and run database contracts
         env:
           PGHOST: localhost
           PGPORT: "5432"
           PGDATABASE: mogrillz_contract
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: psql --set ON_ERROR_STOP=1 --file tests/sql/order-lifecycle-acl-contract.sql
+        run: |
+          psql --set ON_ERROR_STOP=1 --file tests/sql/order-lifecycle-acl-contract.sql
+          psql --set ON_ERROR_STOP=1 --file tests/sql/backup-table-security-contract.sql
