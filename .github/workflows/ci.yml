@@ -68,3 +68,4 @@ jobs:
         run: |
           psql --set ON_ERROR_STOP=1 --file tests/sql/order-lifecycle-acl-contract.sql
           psql --set ON_ERROR_STOP=1 --file tests/sql/backup-table-security-contract.sql
+          psql --set ON_ERROR_STOP=1 --file tests/sql/trigger-function-search-path-contract.sql
