@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const workspace = await import("../src/lib/dashboard/menu-workspace.ts");
@@ -246,4 +247,35 @@ test("stripping macros preserves is_active, availability, and core fields", () =
     price_cents: 1500,
   });
   assert.equal(payload.protein_g, 20);
+});
+
+test("shared Sheet uses a neutral host for dialog semantics", () => {
+  const source = readFileSync(
+    new URL("../src/components/ui/sheet.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /<div\b[^>]*\brole="dialog"/);
+  assert.doesNotMatch(source, /<aside\b[^>]*\brole="dialog"/);
+  assert.match(source, /aria-modal="true"/);
+  assert.match(source, /aria-labelledby=\{titleId\}/);
+});
+
+test("menu dependency notice is not a nested complementary landmark", () => {
+  const source = readFileSync(
+    new URL(
+      "../src/components/dashboard/views/menu-view.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /<Panel as="div" className="menu-dependency">/,
+  );
+  assert.doesNotMatch(
+    source,
+    /<Panel as="aside" className="menu-dependency">/,
+  );
 });
