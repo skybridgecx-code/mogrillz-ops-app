@@ -2,6 +2,7 @@
   "name": "mogrillz-ops-app",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "admin:create": "node scripts/bootstrap-first-admin.mjs",
     "dev": "next dev",
