@@ -30,7 +30,7 @@ export function Sheet({
   return (
     <>
       <div aria-hidden="true" className="sheet-backdrop" onClick={onClose} />
-      <aside aria-labelledby={titleId} aria-modal="true" className="sheet" role="dialog">
+      <div aria-labelledby={titleId} aria-modal="true" className="sheet" role="dialog">
         <div className="sheet-head">
           <h2 className="sheet-title" id={titleId}>{title}</h2>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -41,7 +41,7 @@ export function Sheet({
           </div>
         </div>
         <div className="sheet-body">{children}</div>
-      </aside>
+      </div>
     </>
   );
 }
