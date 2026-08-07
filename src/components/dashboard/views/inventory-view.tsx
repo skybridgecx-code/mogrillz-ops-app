@@ -50,7 +50,7 @@ function InventoryEmptyIcon() {
   return <span aria-hidden="true">—</span>;
 }
 
-function StockCard({ item, onOpen }: { item: InventoryItem; onOpen: (itemId: string, trigger: HTMLButtonElement) => void }) {
+function StockCard({ item, now, onOpen }: { item: InventoryItem; now: number; onOpen: (itemId: string, trigger: HTMLButtonElement) => void }) {
   const coverage = getInventoryCoverage(item.onHand, item.parLevel);
   const isAttention = item.status === "Out" || item.status === "Low";
 
@@ -101,7 +101,7 @@ function StockCard({ item, onOpen }: { item: InventoryItem; onOpen: (itemId: str
       </dl>
 
       <div className="inventory-stock__footer">
-        <span>Updated {timeAgo(item.lastUpdatedAt)}</span>
+        <span>Updated {timeAgo(item.lastUpdatedAt, now)}</span>
         <button
           aria-label={`Update stock for ${item.name}`}
           className="inventory-stock__update"
@@ -124,7 +124,7 @@ function getFocusableElements(container: HTMLElement) {
   ).filter((element) => element.getAttribute("aria-hidden") !== "true");
 }
 
-function StockEditor({ item, api, onClose }: { item: InventoryItem; api: OpsApi; onClose: () => void }) {
+function StockEditor({ item, now, api, onClose }: { item: InventoryItem; now: number; api: OpsApi; onClose: () => void }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
   const savedRef = useRef(false);
@@ -217,7 +217,7 @@ function StockEditor({ item, api, onClose }: { item: InventoryItem; api: OpsApi;
       <div className="inventory-editor" ref={editorRef}>
         <div className="inventory-editor__intro">
           <p>Update the working quantity and par for this ingredient.</p>
-          <span>Last updated {timeAgo(item.lastUpdatedAt)}</span>
+          <span>Last updated {timeAgo(item.lastUpdatedAt, now)}</span>
         </div>
 
         <div className="inventory-editor__fields">
@@ -314,7 +314,7 @@ function StockEditor({ item, api, onClose }: { item: InventoryItem; api: OpsApi;
   );
 }
 
-export function InventoryView({ inventory, api }: { inventory: InventoryItem[]; api: OpsApi }) {
+export function InventoryView({ inventory, now, api }: { inventory: InventoryItem[]; now: number; api: OpsApi }) {
   const [filter, setFilter] = useState<InventoryWorkspaceFilter>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -437,7 +437,7 @@ export function InventoryView({ inventory, api }: { inventory: InventoryItem[]; 
                   />
                   {attentionItems.length ? (
                     <div className="inventory-queue__list">
-                      {attentionItems.map((item) => <StockCard item={item} key={item.id} onOpen={openEditor} />)}
+                      {attentionItems.map((item) => <StockCard item={item} key={item.id} now={now} onOpen={openEditor} />)}
                     </div>
                   ) : (
                     <EmptyState
@@ -458,7 +458,7 @@ export function InventoryView({ inventory, api }: { inventory: InventoryItem[]; 
                     title={<span id="inventory-stock-title">All other stock · {stockItems.length}</span>}
                   />
                   <div className="inventory-stock__grid">
-                    {stockItems.map((item) => <StockCard item={item} key={item.id} onOpen={openEditor} />)}
+                    {stockItems.map((item) => <StockCard item={item} key={item.id} now={now} onOpen={openEditor} />)}
                   </div>
                 </section>
               ) : null}
@@ -481,7 +481,7 @@ export function InventoryView({ inventory, api }: { inventory: InventoryItem[]; 
         />
       )}
 
-      {openItem ? <StockEditor api={api} item={openItem} key={openItem.id} onClose={() => setOpenId(null)} /> : null}
+      {openItem ? <StockEditor api={api} item={openItem} key={openItem.id} now={now} onClose={() => setOpenId(null)} /> : null}
     </section>
   );
 }

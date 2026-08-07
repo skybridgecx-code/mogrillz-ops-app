@@ -63,6 +63,35 @@ export function formatBusinessDateLabel(
   }).format(toValidDate(now));
 }
 
+export function getBusinessHour(
+  now: Date | string | number,
+  timeZone = DEFAULT_BUSINESS_TIME_ZONE,
+) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    timeZone,
+  }).formatToParts(toValidDate(now));
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    throw new RangeError("Canonical metrics could not resolve the business hour.");
+  }
+
+  return hour;
+}
+
+export function getBusinessGreeting(
+  now: Date | string | number,
+  timeZone = DEFAULT_BUSINESS_TIME_ZONE,
+) {
+  const hour = getBusinessHour(now, timeZone);
+  if (hour < 5) return "The kitchen is still moving";
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 export function normalizePaymentStatus(value: string) {
   return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
 }

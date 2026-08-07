@@ -82,9 +82,11 @@ function DashboardInner({
   snapshot: initialSnapshot,
   dataSource,
   dataIssue,
+  initialNow,
 }: {
   snapshot: DashboardSnapshot | null;
   dataSource: ApplicationDataSource;
+  initialNow: number;
   dataIssue?: string | null;
 }) {
   const router = useRouter();
@@ -102,7 +104,7 @@ function DashboardInner({
   );
 
   const [view, setView] = useState<ViewKey>("today");
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(initialNow);
 
   useEffect(() => {
     const syncHash = () => {
@@ -283,7 +285,7 @@ function DashboardInner({
               />
             )}
             {view === "orders" && <OrdersView api={api} now={now} orders={readModels.orders.orders} />}
-            {view === "inventory" && <InventoryView api={api} inventory={readModels.inventory.inventory} />}
+            {view === "inventory" && <InventoryView api={api} inventory={readModels.inventory.inventory} now={now} />}
             {view === "menu" && (
               <MenuView api={api} inventory={readModels.menu.inventory} menu={readModels.menu.menu} />
             )}
@@ -334,6 +336,7 @@ function DashboardInner({
 export function DashboardApp(props: {
   snapshot: DashboardSnapshot | null;
   dataSource: ApplicationDataSource;
+  initialNow: number;
   dataIssue?: string | null;
 }) {
   return (
