@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
   buildCanonicalKpis,
   formatBusinessDateLabel,
+  getBusinessGreeting,
+  getBusinessHour,
   getBusinessDateKey,
   normalizePaymentStatus,
   withCanonicalMetrics,
@@ -81,6 +84,37 @@ test("formats the Eastern business date used by the global header", () => {
     formatBusinessDateLabel("2026-08-04T04:00:00.000Z"),
     "Tuesday, Aug 4",
   );
+});
+
+test("resolves the same dashboard greeting across host timezones", () => {
+  const originalTimezone = process.env.TZ;
+  const easternAfternoon = "2026-08-03T18:30:00.000Z";
+
+  try {
+    process.env.TZ = "UTC";
+    assert.equal(getBusinessGreeting(easternAfternoon), "Good afternoon");
+    process.env.TZ = "Pacific/Auckland";
+    assert.equal(getBusinessGreeting(easternAfternoon), "Good afternoon");
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
+});
+
+test("seeds the first client clock from the server timestamp", () => {
+  const pageSource = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+  const dashboardSource = readFileSync(new URL("../src/components/dashboard/dashboard-app.tsx", import.meta.url), "utf8");
+
+  assert.match(pageSource, /const initialNow = Date\.now\(\);/);
+  assert.match(pageSource, /<DashboardApp[^>]*initialNow=\{initialNow\}/s);
+  assert.match(dashboardSource, /const \[now, setNow\] = useState\(initialNow\);/);
+  assert.doesNotMatch(dashboardSource, /useState\(\(\) => Date\.now\(\)\)/);
+});
+
+test("resolves an Eastern-time boundary where UTC and New York differ", () => {
+  assert.equal(getBusinessHour("2026-08-03T03:30:00.000Z", "UTC"), 3);
+  assert.equal(getBusinessHour("2026-08-03T03:30:00.000Z"), 23);
+  assert.equal(getBusinessGreeting("2026-08-03T03:30:00.000Z"), "Good evening");
 });
 
 test("normalizes only the supported paid-status spellings", () => {

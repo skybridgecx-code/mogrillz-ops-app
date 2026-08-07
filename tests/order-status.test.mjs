@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   canCancelOrderStatus,
   getNextOrderStatus,
+  getPickupTimingBucket,
+  getPickupTimingLabel,
   isRiskyOrderStatusTransition,
   isValidOrderStatusTransition,
   normalizeOrderStatus,
@@ -55,6 +57,15 @@ test("marks completion and cancellation as risky transitions", () => {
   assert.equal(isRiskyOrderStatusTransition("New", "Cancelled"), true);
   assert.equal(isRiskyOrderStatusTransition("New", "In Prep"), false);
   assert.equal(isRiskyOrderStatusTransition("In Prep", "Ready"), false);
+});
+
+test("resolves pickup timing in the Eastern business timezone", () => {
+  const referenceDate = "2026-08-03T03:59:59.000Z";
+
+  assert.equal(getPickupTimingBucket("2026-08-02", new Date(referenceDate)), "today");
+  assert.equal(getPickupTimingLabel("2026-08-03", new Date(referenceDate)), "Tomorrow");
+  assert.equal(getPickupTimingLabel("2026-08-04", new Date(referenceDate)), "Future pickup");
+  assert.equal(getPickupTimingLabel("invalid", new Date(referenceDate)), "Date unavailable");
 });
 
 function order(overrides = {}) {

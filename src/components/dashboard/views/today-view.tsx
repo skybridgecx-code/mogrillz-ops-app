@@ -13,6 +13,7 @@ import type { ViewKey } from "@/lib/dashboard/navigation";
 import { getNextOrderStatus } from "@/lib/dashboard/order-status";
 import type { TodayReadModel } from "@/lib/dashboard/read-models";
 import type { ApplicationAvailabilitySummary } from "@/lib/dashboard/readiness-summary";
+import { getBusinessGreeting } from "@/lib/dashboard/metrics";
 import type { OrderStatus } from "@/types/domain";
 
 interface AttentionItem {
@@ -34,12 +35,8 @@ const ACTIONS: ReadonlyArray<{
   { target: "analytics", label: "Review performance", detail: "See sales and retention" },
 ];
 
-function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 5) return "The kitchen is still moving";
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
+function greeting(now: number) {
+  return getBusinessGreeting(now);
 }
 
 function orderBadgeStatus(status: OrderStatus): StatusBadgeStatus {
@@ -141,7 +138,7 @@ export function TodayView({
     <div className="command-center">
       <section className="command-center__intro" aria-labelledby="command-center-heading">
         <div>
-          <h2 className="command-center__greeting" id="command-center-heading">{greeting()}. Here is the operating picture.</h2>
+          <h2 className="command-center__greeting" id="command-center-heading">{greeting(now)}. Here is the operating picture.</h2>
           <p className="command-center__summary">
             {activeCount
               ? `${activeCount} active order${activeCount === 1 ? "" : "s"} require coverage. Work the exception queue before routine updates.`

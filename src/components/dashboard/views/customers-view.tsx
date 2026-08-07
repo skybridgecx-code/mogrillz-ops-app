@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Sheet } from "@/components/ui/sheet";
 import { formatCurrency, initials, statusTone } from "@/lib/dashboard/format";
+import { DEFAULT_BUSINESS_TIME_ZONE } from "@/lib/dashboard/metrics";
 import {
   ACTIVITY_SCOPE,
   buildCustomerDirectoryRows,
@@ -39,12 +40,12 @@ function formatDate(value: string | null | undefined) {
   if (!value) return "Date unavailable";
   const parsed = new Date(value);
   if (!Number.isFinite(parsed.getTime())) return "Date unavailable";
-  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(parsed);
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: DEFAULT_BUSINESS_TIME_ZONE }).format(parsed);
 }
 
 function formatDateTime(value: string) {
   if (!Number.isFinite(new Date(value).getTime())) return "Timestamp unavailable";
-  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: DEFAULT_BUSINESS_TIME_ZONE }).format(new Date(value));
 }
 
 function sourceNotice(source: SubscriberAvailability, loadedLabel: string) {

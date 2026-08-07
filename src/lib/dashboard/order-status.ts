@@ -1,5 +1,7 @@
 import type { OrderStatus } from "@/types/domain";
 
+const BUSINESS_TIME_ZONE = "America/New_York";
+
 const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   New: "In Prep",
   "In Prep": "Ready",
@@ -18,8 +20,24 @@ const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
 
 export type PickupTimingBucket = "today" | "tomorrow" | "future" | "unavailable";
 
-function startOfDayTimestamp(value: Date) {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+function addCalendarDay(dateKey: string) {
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function getBusinessDateKey(referenceDate: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+  }).formatToParts(referenceDate);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return year && month && day ? `${year}-${month}-${day}` : null;
 }
 
 export function getPickupTimingBucket(
@@ -28,15 +46,21 @@ export function getPickupTimingBucket(
 ): PickupTimingBucket {
   if (!serviceDate) return "unavailable";
 
-  const parsedServiceDate = new Date(`${serviceDate}T12:00:00`);
-  if (!Number.isFinite(parsedServiceDate.getTime())) return "unavailable";
+  const parsedServiceDate = new Date(`${serviceDate}T12:00:00.000Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(serviceDate) ||
+    !Number.isFinite(parsedServiceDate.getTime()) ||
+    parsedServiceDate.toISOString().slice(0, 10) !== serviceDate
+  ) {
+    return "unavailable";
+  }
 
-  const serviceDateTs = startOfDayTimestamp(parsedServiceDate);
-  const todayTs = startOfDayTimestamp(referenceDate);
-  const tomorrowTs = todayTs + 24 * 60 * 60 * 1000;
+  const today = getBusinessDateKey(referenceDate);
+  if (!today) return "unavailable";
+  const tomorrow = addCalendarDay(today);
 
-  if (serviceDateTs <= todayTs) return "today";
-  if (serviceDateTs === tomorrowTs) return "tomorrow";
+  if (serviceDate <= today) return "today";
+  if (serviceDate === tomorrow) return "tomorrow";
   return "future";
 }
 

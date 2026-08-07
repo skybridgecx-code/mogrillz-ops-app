@@ -212,7 +212,7 @@ function OrderSheet({
           <h3 id="order-details-heading">Service details</h3>
           <dl className="order-detail__facts">
             <div><dt>Fulfillment</dt><dd>{order.fulfillmentMethod === "delivery" ? "Delivery" : "Pickup"}</dd></div>
-            <div><dt>Service</dt><dd>{getPickupTimingLabel(order.serviceDate)} · {order.serviceWindow}</dd></div>
+            <div><dt>Service</dt><dd>{getPickupTimingLabel(order.serviceDate, new Date(now))} · {order.serviceWindow}</dd></div>
             <div><dt>Placed</dt><dd>{timeAgo(order.createdAt, now)}</dd></div>
             <div><dt>Payment</dt><dd>{order.paymentProvider} · {order.paymentStatus}</dd></div>
             {order.customerEmail ? (
